@@ -4,7 +4,7 @@ import MediaPlayer
 import Foundation
 import UIKit
 
-@MainActor final class RadioPlayer: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+@MainActor final class RadioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = RadioPlayer()
 
     @Published private(set) var songs: [RadioSong] = []
@@ -18,9 +18,10 @@ import UIKit
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
-    private let voice = AVSpeechSynthesizer()
+    private var voicePlayer: AVAudioPlayer?
+    private var narrationTask: Task<Void, Never>?
+    private var narrationToken = UUID()
     private var completedSongs = 0
-    private var resumeAfterVoice = false
     private var lyricsRequest = UUID()
     private var commercials: [RadioSong] = []
     private var commercialIntervalMinutes = 0
@@ -38,7 +39,6 @@ import UIKit
 
     private override init() {
         super.init()
-        voice.delegate = self
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
@@ -92,14 +92,13 @@ import UIKit
     func play(_ song: RadioSong) { select(song, autoplay: true); pendingIntroduction = true; introduceIfDue() }
 
     func togglePlayback() {
-        if isPlaying || voice.isSpeaking { pause() }
+        if isPlaying { pause() }
         else if player != nil { resume() }
         else if let first = songs.first { select(first, autoplay: true); pendingIntroduction = true; introduceIfDue() }
     }
 
     func pause() {
-        resumeAfterVoice = false
-        if voice.isSpeaking { voice.stopSpeaking(at: .immediate) }
+        stopNarration()
         player?.pause()
         isPlaying = false
         updateNowPlaying()
@@ -139,8 +138,7 @@ import UIKit
 
     private func select(_ song: RadioSong, autoplay: Bool) {
         isCommercial = false
-        resumeAfterVoice = false
-        if voice.isSpeaking { voice.stopSpeaking(at: .immediate) }
+        stopNarration()
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
         if let timeObserver, let player { player.removeTimeObserver(timeObserver) }
@@ -261,60 +259,50 @@ import UIKit
         introduceIfDue()
     }
 
-    private func introduceIfDue() {
-        guard pendingIntroduction || pendingFact else { return }
-        let fact = pendingFact ? (facts.filter { $0.id != lastFactId }.randomElement() ?? facts.randomElement()) : nil
-        if let fact { lastFactId = fact.id }
-        let introduction: String
-        if pendingIntroduction, let song = selected {
-            let named = "\(song.title), \(song.artist.isEmpty ? "de la biblioteca sindical" : "de \(song.artist)")"
-            let styles = [
-                "Estás en tu Radio Sindical. Soy DeVi y ahora suena \(named).",
-                "Desde la Sección I Puebla del SNTSS, escuchamos \(named).",
-                "Tu música en Radio Sindical: \(named). ¡Que la disfrutes!",
-                "Soy DeVi y te acompaño con \(named), aquí en Radio Sindical.",
-                "Seguimos juntos en la radio de la Sección I Puebla. Viene \(named).",
-                "Sintonizas Radio Sindical del SNTSS. Ahora, \(named).",
-                "Una canción más para acompañarte: \(named). Esto es Radio Sindical.",
-                "¡Vamos con música! En tu Radio Sindical suena \(named).",
-                "Desde Radio Sindical Puebla, DeVi te presenta \(named).",
-                "La siguiente canción en Radio Sindical es \(named).",
-                "Gracias por acompañarnos en la Sección I Puebla. Escuchemos \(named).",
-                "SNTSS, Sección I Puebla. Soy DeVi; seguimos con \(named).",
-            ]
-            introduction = styles[completedSongs % styles.count]
-        } else { introduction = "" }
-        pendingIntroduction = false
-        pendingFact = false
-        let words = [fact.map { "¿Sabías que? \($0.text)" } ?? "", introduction]
-            .filter { !$0.isEmpty }.joined(separator: " ")
-        guard !words.isEmpty else { return }
-        // Music stays audible at a reduced volume, like the portal's radio presenter.
-        player?.volume = 0.35
-        let announcement = AVSpeechUtterance(string: String(words.prefix(800)))
-        let spanish = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.lowercased().hasPrefix("es") }
-        announcement.voice = spanish.max { left, right in
-            func rank(_ item: AVSpeechSynthesisVoice) -> Int {
-                let region = item.language.lowercased()
-                let languageScore = region == "es-mx" ? 30 : region == "es-us" ? 20 : 10
-                return item.quality.rawValue * 100 + languageScore
-            }
-            return rank(left) < rank(right)
-        } ?? AVSpeechSynthesisVoice(language: "es-MX")
-        announcement.rate = 0.5
-        announcement.pitchMultiplier = 1.0
-        voice.speak(announcement)
+    private func stopNarration() {
+        narrationToken = UUID()
+        narrationTask?.cancel()
+        narrationTask = nil
+        voicePlayer?.stop()
+        voicePlayer = nil
+        player?.volume = 1
     }
 
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            player?.volume = 1
-            if resumeAfterVoice { resumeAfterVoice = false; resume() }
+    private func introduceIfDue() {
+        guard pendingIntroduction || pendingFact, let song = selected, isPlaying else { return }
+        let fact = pendingFact ? (facts.filter { $0.id != lastFactId }.randomElement() ?? facts.randomElement()) : nil
+        if let fact { lastFactId = fact.id }
+        pendingIntroduction = false
+        pendingFact = false
+        stopNarration()
+        var components = URLComponents(string: "https://sntss1puebla.com/api/radio/voice")!
+        components.queryItems = [
+            URLQueryItem(name: "trackId", value: String(song.id)),
+            URLQueryItem(name: "style", value: String(completedSongs % 12)),
+        ]
+        if let fact { components.queryItems?.append(URLQueryItem(name: "factId", value: fact.id)) }
+        guard let url = components.url else { return }
+        let token = narrationToken
+        narrationTask = Task { @MainActor in
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 12
+            guard let (audio, response) = try? await URLSession.shared.data(for: request),
+                  !Task.isCancelled, token == narrationToken, selected?.id == song.id, isPlaying,
+                  (response as? HTTPURLResponse)?.statusCode == 200,
+                  audio.count > 0, audio.count <= 1_500_000,
+                  response.mimeType == "audio/mpeg",
+                  let clip = try? AVAudioPlayer(data: audio) else { return }
+            clip.delegate = self
+            voicePlayer = clip
+            player?.volume = 0.35
+            if !clip.play() { stopNarration() }
         }
     }
 
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in resumeAfterVoice = false; player?.volume = 1 }
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            if voicePlayer === player { stopNarration() }
+        }
     }
 
     private func configureRemoteControls() {

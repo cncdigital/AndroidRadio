@@ -220,22 +220,26 @@ struct RadioPlayerView: View {
                             .font(.title3).multilineTextAlignment(.center).foregroundStyle(.white.opacity(0.78))
                     }
                 }
-                HStack(spacing: 35) {
-                    Button { radio.previous() } label: { Image(systemName: "backward.end.fill") }
-                        .accessibilityLabel("Anterior")
-                    Button { radio.togglePlayback() } label: {
-                        Image(systemName: radio.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 60)).foregroundStyle(gold)
-                    }.accessibilityLabel(radio.isPlaying ? "Pausar" : "Reproducir")
-                    Button { radio.next() } label: { Image(systemName: "forward.end.fill") }
-                        .accessibilityLabel("Siguiente")
-                }
-                .font(.title).buttonStyle(.plain).foregroundStyle(.white)
-                .padding(.bottom, 8)
             }
             .padding(.top, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(red: 0.025, green: 0.105, blue: 0.20).ignoresSafeArea())
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack(spacing: 35) {
+                Button { radio.previous() } label: { Image(systemName: "backward.end.fill") }
+                    .accessibilityLabel("Anterior")
+                Button { radio.togglePlayback() } label: {
+                    Image(systemName: radio.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 60)).foregroundStyle(gold)
+                }.accessibilityLabel(radio.isPlaying ? "Pausar" : "Reproducir")
+                Button { radio.next() } label: { Image(systemName: "forward.end.fill") }
+                    .accessibilityLabel("Siguiente")
+            }
+            .font(.title).buttonStyle(.plain).foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(Color(red: 0.025, green: 0.105, blue: 0.20))
         }
         .onAppear {
             previousIdleTimer = UIApplication.shared.isIdleTimerDisabled

@@ -21,12 +21,16 @@ import android.text.style.RelativeSizeSpan
 import android.widget.ImageView
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.session.MediaBrowser
@@ -254,6 +258,15 @@ class MainActivity : ComponentActivity() {
         dialog.setContentView(R.layout.dialog_radio_fullscreen)
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.BLACK))
         dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Android 15+ can draw a full-screen dialog behind the gesture/navigation bar.
+        // Keep artwork edge-to-edge while reserving the system insets for the controls.
+        dialog.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
+        val fullRoot = dialog.findViewById<FrameLayout>(R.id.full_root)
+        ViewCompat.setOnApplyWindowInsetsListener(fullRoot) { view, insets ->
+            val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            insets
+        }
         dialog.setOnDismissListener { if (fullScreen === dialog) fullScreen = null }
         dialog.findViewById<Button>(R.id.full_close).setOnClickListener { dialog.dismiss() }
         dialog.findViewById<Button>(R.id.full_previous).setOnClickListener { browser?.seekToPreviousMediaItem() }
@@ -266,6 +279,7 @@ class MainActivity : ComponentActivity() {
         fullScreen = dialog
         dialog.show()
         dialog.window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+        ViewCompat.requestApplyInsets(fullRoot)
         updateFullScreen()
     }
 

@@ -1,0 +1,9 @@
+Radio Sindical - fuentes nativas para Android Auto y CarPlay
+Android: 0.10.0 (incluye corrección de controles al maximizar).
+iOS: 0.7.0.
+DeVi reproduce locuciones MP3 naturales desde https://sntss1puebla.com/api/radio/voice.
+Requiere conexión; si no se recibe locución, la canción continúa sin voz de sistema.
+Para actualizar una instalación existente, compilar y firmar con la MISMA llave y el mismo applicationId.
+El APK publicado 0.8.0 continúa disponible hasta aportar uno firmado con la llave original.
+Ver android-app/README.md e ios-app/README.md. La compilación nativa no se pudo ejecutar aquí (sin Android SDK/Xcode).
+No se incluyen certificados, llaves ni secretos.

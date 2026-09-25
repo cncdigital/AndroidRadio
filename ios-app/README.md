@@ -6,9 +6,9 @@ La integración de CarPlay utiliza exclusivamente las plantillas de lista y repr
 
 El arte de cada canción pasa también a los metadatos `Now Playing` para CarPlay y pantalla bloqueada. La letra sincronizada se destaca con tipografía grande y una línea flotante sobre la portada en el iPhone.
 
-El iPhone tiene un botón **Maximizar portada** que abre una vista completa de portada y karaoke, con controles y un botón de cierre. La pantalla del iPhone permanece encendida mientras esta vista está abierta. CarPlay conserva su plantilla de reproducción de Apple en la pantalla del automóvil.
+El iPhone tiene un botón **Maximizar portada** que abre una vista completa de portada y karaoke, con controles fijos dentro del área segura del teléfono y un botón de cierre. La pantalla del iPhone permanece encendida mientras esta vista está abierta. CarPlay conserva su plantilla de reproducción de Apple en la pantalla del automóvil.
 
-La locución musical prefiere una voz española de calidad premium o mejorada cuando esté instalada; de lo contrario usa la voz disponible del dispositivo. Esta configuración es independiente de la voz de DeVi en el portal.
+Desde 0.7.0, la locución musical usa MP3 de voz natural generada por el portal, sin depender del sintetizador del iPhone. Si la red o la voz no están disponibles, la música sigue sonando sin locución. La voz se escucha sólo durante la reproducción.
 
 ## Compilar en Mac
 

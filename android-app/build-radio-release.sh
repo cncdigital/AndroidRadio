@@ -55,4 +55,4 @@ if [[ "$actual" != "$expected" ]]; then
   exit 1
 fi
 
-printf 'APK 0.8.0 compilado, verificado y firmado con el certificado esperado: %s\n' "$apk"
+printf 'APK 0.10.0 compilado, verificado y firmado con el certificado esperado: %s\n' "$apk"
