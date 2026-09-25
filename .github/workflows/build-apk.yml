@@ -2,7 +2,11 @@ name: Compilar APK
 
 on:
   push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -33,3 +37,14 @@ jobs:
         with:
           name: RadioSindical-debug-apk
           path: android-app/app/build/outputs/apk/debug/*.apk
+
+      - name: Publicar APK en la rama apk
+        run: |
+          mkdir -p /tmp/apk && cp app/build/outputs/apk/debug/app-debug.apk /tmp/apk/RadioSindical-debug.apk
+          cd /tmp/apk
+          git init -q -b apk
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add RadioSindical-debug.apk
+          git commit -qm "APK de ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" apk
