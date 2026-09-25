@@ -9,7 +9,10 @@ import android.os.Handler
 import android.os.Looper
 import android.graphics.Color
 import android.graphics.BitmapFactory
+import android.graphics.Bitmap
+import android.graphics.drawable.ColorDrawable
 import android.graphics.Typeface
+import android.app.Dialog
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -17,6 +20,7 @@ import android.text.style.StyleSpan
 import android.text.style.RelativeSizeSpan
 import android.widget.ImageView
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.ScrollView
@@ -47,6 +51,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var lyricsScroll: ScrollView
     private lateinit var cover: ImageView
     private lateinit var ghost: TextView
+    private var fullScreen: Dialog? = null
+    private var coverBitmap: Bitmap? = null
+    private var currentGhost = ""
     private val lyricExecutor = Executors.newSingleThreadExecutor()
     private var currentLyricSongId = -1
     private var timedLyrics: List<TimedLyric> = emptyList()
@@ -77,6 +84,7 @@ class MainActivity : ComponentActivity() {
         lyricsScroll = findViewById(R.id.lyrics_scroll)
         cover = findViewById(R.id.song_cover)
         ghost = findViewById(R.id.ghost_lyric)
+        findViewById<Button>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
         playButton.setOnClickListener {
             val player = browser
             if (player == null || player.mediaItemCount == 0) startRadio()
@@ -143,6 +151,8 @@ class MainActivity : ComponentActivity() {
         val songId = item?.mediaId?.removePrefix("song:")?.toIntOrNull() ?: -1
         if (songId != currentLyricSongId) {
             currentLyricSongId = songId
+            coverBitmap = null
+            currentGhost = ""
             cover.setImageResource(R.drawable.ic_radio)
             ghost.visibility = View.GONE
             timedLyrics = emptyList()
@@ -170,7 +180,13 @@ class MainActivity : ComponentActivity() {
                         BitmapFactory.decodeByteArray(it, 0, it.size, options)
                     } else null
                 }
-                runOnUiThread { if (!isDestroyed && currentLyricSongId == songId && bitmap != null) cover.setImageBitmap(bitmap) }
+                runOnUiThread {
+                    if (!isDestroyed && currentLyricSongId == songId && bitmap != null) {
+                        coverBitmap = bitmap
+                        cover.setImageBitmap(bitmap)
+                        fullScreen?.findViewById<ImageView>(R.id.full_cover)?.setImageBitmap(bitmap)
+                    }
+                }
             }
             if (songId > 0) lyricExecutor.execute {
                 val raw = runCatching { RadioLyrics.fetch(songId) }.getOrDefault("")
@@ -180,12 +196,17 @@ class MainActivity : ComponentActivity() {
                     timedLyrics = parsed
                     lyricsView.text = if (parsed.isNotEmpty()) parsed.joinToString("\n") { it.text.ifBlank { "♪" } }
                         else raw.replace(Regex("(?m)^\\[\\d{1,2}:\\d{2}[^]]*]\\s*"), "").ifBlank { getString(R.string.song_lyrics_empty) }
+                    if (parsed.isEmpty()) {
+                        currentGhost = lyricsView.text.toString().lineSequence().firstOrNull { it.isNotBlank() }?.take(140).orEmpty()
+                        updateFullScreen()
+                    }
                     lyricsScroll.scrollTo(0, 0)
                     renderLyricProgress()
                 }
             }
         }
         renderProgress()
+        updateFullScreen()
     }
 
     private fun renderProgress() {
@@ -213,7 +234,9 @@ class MainActivity : ComponentActivity() {
         styled.setSpan(RelativeSizeSpan(1.3f), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         lyricsView.text = styled
         ghost.text = offsets[current]
+        currentGhost = offsets[current]
         ghost.visibility = View.VISIBLE
+        updateFullScreen()
         lyricsView.post {
             val line = lyricsView.layout?.getLineForOffset(begin) ?: return@post
             lyricsScroll.smoothScrollTo(0, (lyricsView.layout.getLineTop(line) - lyricsScroll.height / 3).coerceAtLeast(0))
@@ -225,7 +248,40 @@ class MainActivity : ComponentActivity() {
         return "%d:%02d".format(seconds / 60, seconds % 60)
     }
 
+    private fun showFullScreen() {
+        if (fullScreen?.isShowing == true) return
+        val dialog = Dialog(this, android.R.style.Theme_Material_NoActionBar)
+        dialog.setContentView(R.layout.dialog_radio_fullscreen)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.BLACK))
+        dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        dialog.setOnDismissListener { if (fullScreen === dialog) fullScreen = null }
+        dialog.findViewById<Button>(R.id.full_close).setOnClickListener { dialog.dismiss() }
+        dialog.findViewById<Button>(R.id.full_previous).setOnClickListener { browser?.seekToPreviousMediaItem() }
+        dialog.findViewById<Button>(R.id.full_next).setOnClickListener { browser?.seekToNextMediaItem() }
+        dialog.findViewById<Button>(R.id.full_play).setOnClickListener {
+            val player = browser
+            if (player == null || player.mediaItemCount == 0) startRadio()
+            else if (player.isPlaying) player.pause() else player.play()
+        }
+        fullScreen = dialog
+        dialog.show()
+        dialog.window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+        updateFullScreen()
+    }
+
+    private fun updateFullScreen() {
+        val dialog = fullScreen?.takeIf { it.isShowing } ?: return
+        val image = dialog.findViewById<ImageView>(R.id.full_cover)
+        if (coverBitmap != null) image.setImageBitmap(coverBitmap)
+        else image.setImageResource(R.drawable.ic_radio)
+        dialog.findViewById<TextView>(R.id.full_lyric).text = currentGhost.ifBlank { getString(R.string.song_lyrics_empty) }
+        dialog.findViewById<TextView>(R.id.full_title).text = title.text
+        dialog.findViewById<TextView>(R.id.full_artist).text = artist.text
+        dialog.findViewById<Button>(R.id.full_play).text = playButton.text
+    }
+
     override fun onDestroy() {
+        fullScreen?.dismiss()
         handler.removeCallbacks(tick)
         browser?.removeListener(listener)
         lyricExecutor.shutdownNow()

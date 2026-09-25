@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 import androidx.media3.common.AudioAttributes
@@ -32,6 +33,10 @@ class RadioPlaybackService : MediaLibraryService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var tts: TextToSpeech? = null
     private var voiceReady = false
+    private var offlineVoice: Voice? = null
+    private var announcementText: String? = null
+    private var voiceFallbackUsed = false
+    private var announcementStarted = false
     private var completedSongs = 0
     private var elapsedMusicMs = 0L
     private var lastSongPositionMs = 0L
@@ -157,15 +162,25 @@ class RadioPlaybackService : MediaLibraryService() {
                 if (voiceReady) {
                     val language = tts?.setLanguage(Locale("es", "MX")) ?: TextToSpeech.LANG_NOT_SUPPORTED
                     voiceReady = language != TextToSpeech.LANG_MISSING_DATA && language != TextToSpeech.LANG_NOT_SUPPORTED
-                    tts?.setSpeechRate(1.1f)
-                    tts?.setPitch(1.05f)
+                    if (voiceReady) {
+                        val candidates = tts?.voices.orEmpty().filter { it.locale.language == "es" }
+                        val ranking = compareBy<Voice> { it.quality }
+                            .thenBy { if (it.locale.country == "MX") 3 else if (it.locale.country == "US") 2 else 1 }
+                            .thenBy { if (it.isNetworkConnectionRequired) 1 else 0 }
+                        offlineVoice = candidates.filterNot { it.isNetworkConnectionRequired }.maxWithOrNull(ranking)
+                        candidates.maxWithOrNull(ranking)?.let { tts?.voice = it }
+                    }
+                    tts?.setSpeechRate(1.02f)
+                    tts?.setPitch(1.0f)
                 }
             }
         }
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String) = Unit
+            override fun onStart(utteranceId: String) {
+                mainHandler.post { if (activeAnnouncement == utteranceId) announcementStarted = true }
+            }
             override fun onDone(utteranceId: String) = finishAnnouncement(utteranceId)
-            override fun onError(utteranceId: String) = finishAnnouncement(utteranceId)
+            override fun onError(utteranceId: String) = recoverAnnouncement(utteranceId)
         })
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -181,6 +196,10 @@ class RadioPlaybackService : MediaLibraryService() {
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 val previous = lastMediaId
                 lastMediaId = item?.mediaId
+                if (item?.mediaId?.startsWith("song:") == true && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && previous != item.mediaId) {
+                    pendingIntroduction = true
+                    mainHandler.post { if (player.currentMediaItem?.mediaId == item.mediaId) announceIfDue(item) }
+                }
                 if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || item == null) return
                 if (previous?.startsWith("commercial:") == true) {
                     // The inserted commercial has finished; remove it from the music queue.
@@ -199,7 +218,7 @@ class RadioPlaybackService : MediaLibraryService() {
                 elapsedMusicMs += lastSongPositionMs.coerceAtLeast(0)
                 lastSongPositionMs = 0
                 completedSongs += 1
-                pendingIntroduction = completedSongs % 2 == 0
+                pendingIntroduction = true
                 pendingFact = completedSongs % 5 == 0
                 if (intervalMinutes >= 5 && commercials.isNotEmpty() && elapsedMusicMs >= intervalMinutes * 60_000L) {
                     val commercial = commercials[commercialIndex % commercials.size]
@@ -211,6 +230,9 @@ class RadioPlaybackService : MediaLibraryService() {
                     return
                 }
                 announceIfDue(item)
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) player.currentMediaItem?.takeIf { it.mediaId.startsWith("song:") }?.let { announceIfDue(it) }
             }
         })
         mainHandler.post(positionRefresh)
@@ -233,17 +255,56 @@ class RadioPlaybackService : MediaLibraryService() {
                 val artist = item.mediaMetadata.artist?.toString()?.trim().orEmpty()
                 val announcementId = "radio-intro-${System.currentTimeMillis()}"
                 activeAnnouncement = announcementId
+                voiceFallbackUsed = false
+                announcementStarted = false
                 player.pause()
                 val available = facts.filter { it.id != lastFactId }
                 val fact = if (factDue) available.randomOrNull() ?: facts.randomOrNull() else null
                 lastFactId = fact?.id ?: lastFactId
+                val named = "$title${if (artist.isNotEmpty()) ", de $artist" else ", de la biblioteca sindical"}"
+                val styles = listOf(
+                    "Estás en tu Radio Sindical. Soy DeVi y ahora suena $named.",
+                    "Desde la Sección I Puebla del SNTSS, escuchamos $named.",
+                    "Tu música en Radio Sindical: $named. ¡Que la disfrutes!",
+                    "Soy DeVi y te acompaño con $named, aquí en Radio Sindical.",
+                    "Seguimos juntos en la radio de la Sección I Puebla. Viene $named.",
+                    "Sintonizas Radio Sindical del SNTSS. Ahora, $named.",
+                    "Una canción más para acompañarte: $named. Esto es Radio Sindical.",
+                    "¡Vamos con música! En tu Radio Sindical suena $named.",
+                    "Desde Radio Sindical Puebla, DeVi te presenta $named.",
+                    "La siguiente canción en Radio Sindical es $named.",
+                    "Gracias por acompañarnos en la Sección I Puebla. Escuchemos $named.",
+                    "SNTSS, Sección I Puebla. Soy DeVi; seguimos con $named.",
+                )
                 val message = listOfNotNull(
                     fact?.let { "¿Sabías que? ${it.text}" },
-                    if (introduce && title.isNotEmpty()) "¡Seguimos con $title${if (artist.isNotEmpty()) ", de $artist" else ""}! Soy DeVi; que la disfrutes." else null,
+                    if (introduce && title.isNotEmpty()) styles[completedSongs % styles.size] else null,
                 ).joinToString(" ")
+                announcementText = message.take(800)
                 if (message.isBlank() || tts?.speak(message.take(800), TextToSpeech.QUEUE_FLUSH, null, announcementId) != TextToSpeech.SUCCESS) {
-                    finishAnnouncement(announcementId)
+                    recoverAnnouncement(announcementId)
                 }
+                mainHandler.postDelayed({
+                    if (activeAnnouncement == announcementId && !announcementStarted) recoverAnnouncement(announcementId)
+                }, 4_500)
+    }
+
+    private fun recoverAnnouncement(id: String) {
+        mainHandler.post {
+            if (activeAnnouncement != id) return@post
+            val local = offlineVoice
+            val message = announcementText
+            if (!voiceFallbackUsed && local != null && message != null && tts?.voice?.name != local.name) {
+                voiceFallbackUsed = true
+                announcementStarted = false
+                if (tts?.setVoice(local) == TextToSpeech.SUCCESS &&
+                    tts?.speak(message, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS) {
+                    mainHandler.postDelayed({ if (activeAnnouncement == id && !announcementStarted) finishAnnouncement(id) }, 4_500)
+                    return@post
+                }
+            }
+            finishAnnouncement(id)
+        }
     }
 
     private fun refreshCatalog() {
@@ -275,6 +336,7 @@ class RadioPlaybackService : MediaLibraryService() {
         mainHandler.post {
             if (activeAnnouncement != id) return@post
             activeAnnouncement = null
+            announcementText = null
             if (player.mediaItemCount > 0) player.play()
         }
     }

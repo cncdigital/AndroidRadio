@@ -43,15 +43,18 @@ jobs:
 
       - name: Compilar APK firmado
         env:
-          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/radiosindical.jks
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          RADIO_SIGNING_STORE_FILE: ${{ runner.temp }}/radiosindical.jks
+          RADIO_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          RADIO_SIGNING_KEY_ALIAS: radiosindical
+          RADIO_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: Verificar firma
         run: |
           APK=app/build/outputs/apk/release/app-release.apk
           test -f "$APK" || { echo "::error::No se genero un APK firmado"; exit 1; }
-          "$ANDROID_HOME"/build-tools/36.0.0/apksigner verify --print-certs "$APK"
+          OUT=$("$ANDROID_HOME"/build-tools/36.0.0/apksigner verify --print-certs "$APK"); echo "$OUT"
+          echo "$OUT" | grep -qi "SHA-256 digest: 89c6a0e71776d62240dd55bdceed9edbe46fe02b7102ae02d6fafae8d0bf642e" || { echo "::error::El APK no tiene la firma permanente"; exit 1; }
 
       - name: Publicar APK en la rama apk
         run: |

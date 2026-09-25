@@ -11,29 +11,33 @@ android {
         applicationId = "mx.sntss1puebla.credenciales"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 8
+        versionName = "0.8.0"
     }
 
-    // Clave permanente: se toma de variables de entorno (secrets de GitHub), nunca del repositorio.
-    val keystorePath = System.getenv("ANDROID_KEYSTORE_FILE")
-    val keystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
-    val hasSharedKey = !keystorePath.isNullOrBlank() && !keystorePassword.isNullOrBlank()
+    // Keep this block in every packaged version: an update must use the installed APK's signing key.
+    // Signing secrets are supplied by the packaging environment, never committed to source.
+    val radioStorePath = providers.environmentVariable("RADIO_SIGNING_STORE_FILE").orNull
+    val radioStorePassword = providers.environmentVariable("RADIO_SIGNING_STORE_PASSWORD").orNull
+    val radioKeyAlias = providers.environmentVariable("RADIO_SIGNING_KEY_ALIAS").orNull
+    val radioKeyPassword = providers.environmentVariable("RADIO_SIGNING_KEY_PASSWORD").orNull
+    val radioSigningReady = listOf(radioStorePath, radioStorePassword, radioKeyAlias, radioKeyPassword)
+        .all { !it.isNullOrBlank() } && radioStorePath?.let { file(it).isFile } == true
 
     signingConfigs {
-        if (hasSharedKey) {
-            create("shared") {
-                storeFile = file(keystorePath!!)
-                storePassword = keystorePassword
-                keyAlias = "radiosindical"
-                keyPassword = keystorePassword
+        create("radioRelease") {
+            if (radioSigningReady) {
+                storeFile = file(radioStorePath!!)
+                storePassword = radioStorePassword
+                keyAlias = radioKeyAlias
+                keyPassword = radioKeyPassword
             }
         }
     }
 
     buildTypes {
         release {
-            if (hasSharedKey) signingConfig = signingConfigs.getByName("shared")
+            if (radioSigningReady) signingConfig = signingConfigs.getByName("radioRelease")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

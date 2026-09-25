@@ -89,12 +89,12 @@ import UIKit
         }
     }
 
-    func play(_ song: RadioSong) { select(song, autoplay: true) }
+    func play(_ song: RadioSong) { select(song, autoplay: true); pendingIntroduction = true; introduceIfDue() }
 
     func togglePlayback() {
         if isPlaying || voice.isSpeaking { pause() }
         else if player != nil { resume() }
-        else if let first = songs.first { select(first, autoplay: true) }
+        else if let first = songs.first { select(first, autoplay: true); pendingIntroduction = true; introduceIfDue() }
     }
 
     func pause() {
@@ -118,12 +118,16 @@ import UIKit
         guard !songs.isEmpty else { return }
         let index = songs.firstIndex(where: { $0.id == selected?.id }) ?? -1
         select(songs[(index + 1) % songs.count], autoplay: true)
+        pendingIntroduction = true
+        introduceIfDue()
     }
 
     func previous() {
         guard !songs.isEmpty else { return }
         let index = songs.firstIndex(where: { $0.id == selected?.id }) ?? 0
         select(songs[(index - 1 + songs.count) % songs.count], autoplay: true)
+        pendingIntroduction = true
+        introduceIfDue()
     }
 
     func seek(to seconds: Double) {
@@ -235,7 +239,7 @@ import UIKit
         guard !songs.isEmpty else { return }
         elapsedMusicSeconds += max(currentSeconds, durationSeconds)
         completedSongs += 1
-        pendingIntroduction = completedSongs % 2 == 0
+        pendingIntroduction = true
         pendingFact = completedSongs % 5 == 0
         let index = songs.firstIndex(where: { $0.id == selected?.id }) ?? 0
         if songs.count > 1 && index == songs.count - 1 {
@@ -261,9 +265,25 @@ import UIKit
         guard pendingIntroduction || pendingFact else { return }
         let fact = pendingFact ? (facts.filter { $0.id != lastFactId }.randomElement() ?? facts.randomElement()) : nil
         if let fact { lastFactId = fact.id }
-        let introduction = pendingIntroduction && selected != nil
-            ? "¡Seguimos con \(selected!.title), de \(selected!.artist.isEmpty ? "Radio Sindical" : selected!.artist)! Soy DeVi; que la disfrutes."
-            : ""
+        let introduction: String
+        if pendingIntroduction, let song = selected {
+            let named = "\(song.title), \(song.artist.isEmpty ? "de la biblioteca sindical" : "de \(song.artist)")"
+            let styles = [
+                "Estás en tu Radio Sindical. Soy DeVi y ahora suena \(named).",
+                "Desde la Sección I Puebla del SNTSS, escuchamos \(named).",
+                "Tu música en Radio Sindical: \(named). ¡Que la disfrutes!",
+                "Soy DeVi y te acompaño con \(named), aquí en Radio Sindical.",
+                "Seguimos juntos en la radio de la Sección I Puebla. Viene \(named).",
+                "Sintonizas Radio Sindical del SNTSS. Ahora, \(named).",
+                "Una canción más para acompañarte: \(named). Esto es Radio Sindical.",
+                "¡Vamos con música! En tu Radio Sindical suena \(named).",
+                "Desde Radio Sindical Puebla, DeVi te presenta \(named).",
+                "La siguiente canción en Radio Sindical es \(named).",
+                "Gracias por acompañarnos en la Sección I Puebla. Escuchemos \(named).",
+                "SNTSS, Sección I Puebla. Soy DeVi; seguimos con \(named).",
+            ]
+            introduction = styles[completedSongs % styles.count]
+        } else { introduction = "" }
         pendingIntroduction = false
         pendingFact = false
         let words = [fact.map { "¿Sabías que? \($0.text)" } ?? "", introduction]
@@ -272,8 +292,17 @@ import UIKit
         // Music stays audible at a reduced volume, like the portal's radio presenter.
         player?.volume = 0.35
         let announcement = AVSpeechUtterance(string: String(words.prefix(800)))
-        announcement.voice = AVSpeechSynthesisVoice(language: "es-MX")
-        announcement.rate = 0.52
+        let spanish = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.lowercased().hasPrefix("es") }
+        announcement.voice = spanish.max { left, right in
+            func rank(_ item: AVSpeechSynthesisVoice) -> Int {
+                let region = item.language.lowercased()
+                let languageScore = region == "es-mx" ? 30 : region == "es-us" ? 20 : 10
+                return item.quality.rawValue * 100 + languageScore
+            }
+            return rank(left) < rank(right)
+        } ?? AVSpeechSynthesisVoice(language: "es-MX")
+        announcement.rate = 0.5
+        announcement.pitchMultiplier = 1.0
         voice.speak(announcement)
     }
 
@@ -313,6 +342,8 @@ import UIKit
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: selected.title,
             MPMediaItemPropertyArtist: selected.artist.isEmpty ? "Radio Sindical" : selected.artist,
+            MPMediaItemPropertyAlbumArtist: "Radio Sindical · SNTSS Sección I Puebla",
+            MPMediaItemPropertyAlbumTitle: selected.album.isEmpty ? "Radio Sindical · SNTSS Sección I Puebla" : selected.album,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentSeconds,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1 : 0,
         ]

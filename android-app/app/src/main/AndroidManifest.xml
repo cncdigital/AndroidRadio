@@ -23,6 +23,8 @@
         android:theme="@style/Theme.CredencialesSNTSS"
         android:usesCleartextTraffic="false">
 
+        <meta-data android:name="asset_statements" android:resource="@string/asset_statements" />
+
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
