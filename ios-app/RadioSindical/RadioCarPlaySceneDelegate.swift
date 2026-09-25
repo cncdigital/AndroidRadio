@@ -14,7 +14,7 @@ import UIKit
     }
 
     func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
-                                  didDisconnect interfaceController: CPInterfaceController) {
+                                  didDisconnectInterfaceController interfaceController: CPInterfaceController) {
         self.interfaceController = nil
     }
 
