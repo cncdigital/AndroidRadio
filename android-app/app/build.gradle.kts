@@ -11,8 +11,8 @@ android {
         applicationId = "mx.sntss1puebla.credenciales"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "0.10.0"
+        versionCode = 11
+        versionName = "0.10.1"
     }
 
     // Keep this block in every packaged version: an update must use the installed APK's signing key.

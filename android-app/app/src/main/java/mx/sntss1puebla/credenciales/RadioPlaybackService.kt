@@ -30,6 +30,7 @@ class RadioPlaybackService : MediaLibraryService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var voicePlayer: ExoPlayer
     private var announcementStarted = false
+    private var musicVolumeBeforeAnnouncement = 1f
     private var completedSongs = 0
     private var elapsedMusicMs = 0L
     private var lastSongPositionMs = 0L
@@ -164,7 +165,9 @@ class RadioPlaybackService : MediaLibraryService() {
                     if (!player.isPlaying) finishAnnouncement()
                     else {
                         announcementStarted = true
-                        player.volume = 0.35f
+                        musicVolumeBeforeAnnouncement = player.volume.coerceIn(0f, 1f)
+                        voicePlayer.volume = 1f
+                        fadeMusicVolume((musicVolumeBeforeAnnouncement * 0.18f).coerceAtLeast(0.04f), 320L)
                     }
                 } else if (state == Player.STATE_ENDED) finishAnnouncement()
             }
@@ -284,13 +287,30 @@ class RadioPlaybackService : MediaLibraryService() {
         }
     }
 
+    private fun fadeMusicVolume(targetVolume: Float, durationMs: Long) {
+        val startVolume = player.volume.coerceIn(0f, 1f)
+        val target = targetVolume.coerceIn(0f, 1f)
+        val steps = 8
+        for (step in 1..steps) {
+            mainHandler.postDelayed({
+                if (::player.isInitialized) {
+                    val fraction = step.toFloat() / steps.toFloat()
+                    player.volume = startVolume + ((target - startVolume) * fraction)
+                }
+            }, durationMs * step / steps)
+        }
+    }
+
     private fun finishAnnouncement() {
         if (activeAnnouncement == null) return
         activeAnnouncement = null
+        val restoreVolume = musicVolumeBeforeAnnouncement.coerceIn(0f, 1f)
         announcementStarted = false
-        player.volume = 1f
         voicePlayer.stop()
         voicePlayer.clearMediaItems()
+        // DeVi keeps an independent full-volume speech channel. Restore the exact
+        // music level chosen by the listener instead of forcing the radio to 100%.
+        fadeMusicVolume(restoreVolume, 440L)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = librarySession
