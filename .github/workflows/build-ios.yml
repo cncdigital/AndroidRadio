@@ -1,0 +1,49 @@
+name: Compilar iPhone
+
+on:
+  push:
+    branches: [main]
+    paths: ["ios-app/**", ".github/workflows/build-ios.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Versión de Xcode
+        run: xcodebuild -version
+
+      - name: Compilar para iPhone (sin firma)
+        run: |
+          set -o pipefail
+          xcodebuild -project RadioSindical.xcodeproj -scheme RadioSindical \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee xcodebuild.log | grep -E "error:|warning:|BUILD" || true
+          test -d build/Build/Products/Release-iphoneos/RadioSindical.app || { tail -80 xcodebuild.log; exit 1; }
+
+      - name: Empaquetar IPA sin firma
+        run: |
+          rm -rf Payload && mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/RadioSindical.app Payload/
+          zip -qry RadioSindical-sin-firma.ipa Payload
+
+      - name: Publicar IPA en la rama ipa
+        run: |
+          mkdir -p /tmp/ipa && cp RadioSindical-sin-firma.ipa xcodebuild.log /tmp/ipa/
+          cd /tmp/ipa
+          git init -q -b ipa
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add .
+          git commit -qm "IPA de ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ipa
