@@ -5,17 +5,27 @@ import UIKit
 @MainActor final class RadioCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     private weak var interfaceController: CPInterfaceController?
     private let radio = RadioPlayer.shared
+    private var refreshTask: Task<Void, Never>?
 
     func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
                                   didConnect interfaceController: CPInterfaceController) {
         self.interfaceController = interfaceController
         showSongs()
-        Task { await radio.refresh(); showSongs() }
+        refreshTask?.cancel()
+        refreshTask = Task {
+            while !Task.isCancelled {
+                await radio.refresh()
+                showSongs()
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+        }
     }
 
     func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,
                                   didDisconnectInterfaceController interfaceController: CPInterfaceController) {
         self.interfaceController = nil
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 
     private func showSongs() {

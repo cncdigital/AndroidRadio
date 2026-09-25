@@ -1,6 +1,8 @@
 # Radio Sindical para Android y Android Auto
 
-La app abre directamente el reproductor nativo, sin WebView ni inicio de sesión. Android Auto muestra el catálogo público de canciones activas mediante `MediaLibraryService`. Las rutas públicas `/api/radio/catalog` y `/api/radio/audio/:id` no exponen archivos administrativos ni comerciales; la administración y el catálogo privado del portal siguen protegidos.
+La app abre directamente el reproductor nativo, sin WebView ni inicio de sesión. Android Auto muestra canciones activas mediante `MediaLibraryService`, con una cola distinta al iniciar, datos de DeVi cada cinco canciones terminadas, presentación cada dos y comerciales al alcanzar el intervalo administrado al terminar una canción. El catálogo se actualiza cada minuto sin cortar el tema actual. Las rutas públicas de escucha sólo sirven canciones y comerciales activos; la administración y el catálogo privado del portal siguen protegidos. Los avisos de micrófono en vivo requieren una integración de audio específica y todavía no se escuchan desde esta app.
+
+Las portadas se entregan a Android Auto mediante `RadioArtworkProvider`, que descarga y conserva brevemente las imágenes activas; el automóvil muestra el arte en su reproductor de sistema. En el teléfono, la línea de letra con marca de tiempo aparece ampliada sobre la portada y en el panel de karaoke. Por seguridad vial, no se coloca la letra en la pantalla de Android Auto.
 
 La pantalla del **teléfono** muestra la letra cargada y sigue las líneas que tengan marcas de tiempo. Android Auto mantiene su pantalla de reproducción estándar con título, artista y controles; no incorpora letras desplazables en la pantalla del vehículo. DeVi presenta por voz la siguiente canción después de cada dos canciones terminadas, usando el título y el artista conocidos. La voz nativa usa el motor de texto a voz instalado en el dispositivo.
 

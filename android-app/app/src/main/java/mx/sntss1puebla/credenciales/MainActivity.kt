@@ -8,11 +8,15 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.graphics.Color
+import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
+import android.text.style.RelativeSizeSpan
+import android.widget.ImageView
+import android.view.View
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.ScrollView
@@ -41,6 +45,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var progress: TextView
     private lateinit var lyricsView: TextView
     private lateinit var lyricsScroll: ScrollView
+    private lateinit var cover: ImageView
+    private lateinit var ghost: TextView
     private val lyricExecutor = Executors.newSingleThreadExecutor()
     private var currentLyricSongId = -1
     private var timedLyrics: List<TimedLyric> = emptyList()
@@ -69,6 +75,8 @@ class MainActivity : ComponentActivity() {
         progress = findViewById(R.id.song_progress)
         lyricsView = findViewById(R.id.song_lyrics)
         lyricsScroll = findViewById(R.id.lyrics_scroll)
+        cover = findViewById(R.id.song_cover)
+        ghost = findViewById(R.id.ghost_lyric)
         playButton.setOnClickListener {
             val player = browser
             if (player == null || player.mediaItemCount == 0) startRadio()
@@ -135,9 +143,35 @@ class MainActivity : ComponentActivity() {
         val songId = item?.mediaId?.removePrefix("song:")?.toIntOrNull() ?: -1
         if (songId != currentLyricSongId) {
             currentLyricSongId = songId
+            cover.setImageResource(R.drawable.ic_radio)
+            ghost.visibility = View.GONE
             timedLyrics = emptyList()
             shownLyricLine = -1
             lyricsView.setText(R.string.song_lyrics_empty)
+            if (songId > 0 && item?.mediaMetadata?.artworkUri?.scheme == "content") lyricExecutor.execute {
+                val uri = RadioArtworkProvider.uri(songId)
+                val bytes = runCatching { contentResolver.openInputStream(uri)?.use { stream ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (output.size() < 3 * 1024 * 1024) {
+                        val count = stream.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                } }.getOrNull()
+                val bitmap = bytes?.let {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(it, 0, it.size, bounds)
+                    if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+                        val options = BitmapFactory.Options().apply {
+                            inSampleSize = (maxOf(bounds.outWidth, bounds.outHeight) / 512).coerceAtLeast(1)
+                        }
+                        BitmapFactory.decodeByteArray(it, 0, it.size, options)
+                    } else null
+                }
+                runOnUiThread { if (!isDestroyed && currentLyricSongId == songId && bitmap != null) cover.setImageBitmap(bitmap) }
+            }
             if (songId > 0) lyricExecutor.execute {
                 val raw = runCatching { RadioLyrics.fetch(songId) }.getOrDefault("")
                 val parsed = RadioLyrics.parse(raw)
@@ -176,7 +210,10 @@ class MainActivity : ComponentActivity() {
         val styled = SpannableString(full)
         styled.setSpan(ForegroundColorSpan(Color.rgb(242, 179, 33)), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         styled.setSpan(StyleSpan(Typeface.BOLD), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        styled.setSpan(RelativeSizeSpan(1.3f), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         lyricsView.text = styled
+        ghost.text = offsets[current]
+        ghost.visibility = View.VISIBLE
         lyricsView.post {
             val line = lyricsView.layout?.getLineForOffset(begin) ?: return@post
             lyricsScroll.smoothScrollTo(0, (lyricsView.layout.getLineTop(line) - lyricsScroll.height / 3).coerceAtLeast(0))

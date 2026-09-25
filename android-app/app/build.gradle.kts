@@ -11,8 +11,8 @@ android {
         applicationId = "mx.sntss1puebla.credenciales"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.5.0"
     }
 
     // Clave permanente: se toma de variables de entorno (secrets de GitHub), nunca del repositorio.

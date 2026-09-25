@@ -6,6 +6,12 @@ struct RadioSong: Decodable, Identifiable, Equatable {
     let artist: String
     let album: String
     let availableQualities: [Int]
+    let coverUrl: String?
+
+    var artworkURL: URL? {
+        guard let coverUrl, coverUrl.hasPrefix("/api/radio/cover/") else { return nil }
+        return URL(string: "https://sntss1puebla.com\(coverUrl)")
+    }
 
     var audioURL: URL {
         var parts = URLComponents(string: "https://sntss1puebla.com/api/radio/audio/\(id)")!
@@ -18,6 +24,15 @@ struct RadioSong: Decodable, Identifiable, Equatable {
 
 struct RadioCatalogResponse: Decodable {
     let tracks: [RadioSong]
+    let commercials: [RadioSong]
+    let commercialIntervalMinutes: Int
+    let facts: [RadioFact]
+}
+
+struct RadioFact: Decodable { let id: String; let text: String }
+
+extension RadioSong {
+    var commercialURL: URL { URL(string: "https://sntss1puebla.com/api/radio/commercial/\(id)")! }
 }
 
 struct RadioLyricResponse: Decodable {

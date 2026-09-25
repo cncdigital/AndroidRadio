@@ -8,6 +8,7 @@ struct RadioPlayerView: View {
     var body: some View {
         let lines = LyricsParser.parse(radio.lyrics)
         let activeLine = lines.last(where: { $0.seconds <= radio.currentSeconds })?.id
+        let ghostLine = lines.last(where: { $0.seconds <= radio.currentSeconds })?.text
         ScrollView {
             VStack(spacing: 20) {
                 Text("SNTSS · SECCIÓN I PUEBLA")
@@ -21,6 +22,26 @@ struct RadioPlayerView: View {
                     Circle().strokeBorder(.white.opacity(0.12), lineWidth: 2).padding(50)
                     Circle().fill(gold).padding(66)
                     Image(systemName: "play.fill").font(.system(size: 42)).foregroundStyle(midnight)
+                    if let artwork = radio.selected?.artworkURL {
+                        AsyncImage(url: artwork) { image in
+                            image.resizable().scaledToFill().clipShape(Circle())
+                        } placeholder: { Color.clear }
+                        .padding(16)
+                    }
+                    if let ghostLine, !ghostLine.isEmpty {
+                        VStack {
+                            Spacer()
+                            Text(ghostLine)
+                                .font(.system(size: 24, weight: .bold, design: .rounded))
+                                .multilineTextAlignment(.center).lineLimit(3)
+                                .foregroundStyle(gold)
+                                .shadow(color: .black, radius: 8)
+                                .padding(12).frame(maxWidth: .infinity)
+                                .background(.black.opacity(0.72))
+                        }
+                        .clipShape(Circle()).padding(16)
+                        .allowsHitTesting(false)
+                    }
                 }
                 .frame(width: 210, height: 210)
                 .accessibilityHidden(true)
@@ -61,13 +82,13 @@ struct RadioPlayerView: View {
                                 VStack(alignment: .leading, spacing: 12) {
                                     ForEach(lines) { line in
                                         Text(line.text)
-                                            .font(activeLine == line.id ? .headline : .body)
+                                            .font(activeLine == line.id ? .system(size: 26, weight: .bold, design: .rounded) : .system(size: 20))
                                             .foregroundStyle(activeLine == line.id ? gold : .white.opacity(0.72))
                                             .id(line.id)
                                     }
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .frame(height: 180)
+                            .frame(height: 260)
                             .onChange(of: activeLine) { id in
                                 if let id { withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(id, anchor: .center) } }
                             }
@@ -105,6 +126,11 @@ struct RadioPlayerView: View {
         }
         .background(midnight.ignoresSafeArea())
         .foregroundStyle(.white)
-        .task { await radio.refresh() }
+        .task {
+            while !Task.isCancelled {
+                await radio.refresh()
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+        }
     }
 }

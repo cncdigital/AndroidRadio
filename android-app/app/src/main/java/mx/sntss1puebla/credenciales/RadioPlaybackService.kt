@@ -11,6 +11,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -32,6 +33,29 @@ class RadioPlaybackService : MediaLibraryService() {
     private var tts: TextToSpeech? = null
     private var voiceReady = false
     private var completedSongs = 0
+    private var elapsedMusicMs = 0L
+    private var lastSongPositionMs = 0L
+    private var commercials: List<MediaItem> = emptyList()
+    private var intervalMinutes = 0
+    private var commercialIndex = 0
+    private var facts: List<RadioCatalog.Fact> = emptyList()
+    private var lastFactId: String? = null
+    private var pendingFact = false
+    private var pendingIntroduction = false
+    private var lastMediaId: String? = null
+    private val catalogRefresh = object : Runnable {
+        override fun run() {
+            if (player.mediaItemCount > 0) catalogExecutor.execute { runCatching { refreshCatalog() } }
+            mainHandler.postDelayed(this, 60_000)
+        }
+    }
+    private val positionRefresh = object : Runnable {
+        override fun run() {
+            if (::player.isInitialized && player.isPlaying && player.currentMediaItem?.mediaId?.startsWith("song:") == true)
+                lastSongPositionMs = player.currentPosition
+            mainHandler.postDelayed(this, 1_000)
+        }
+    }
     private var activeAnnouncement: String? = null
     @Volatile private var songs: List<MediaItem> = emptyList()
     private lateinit var httpFactory: DefaultHttpDataSource.Factory
@@ -144,22 +168,53 @@ class RadioPlaybackService : MediaLibraryService() {
             override fun onError(utteranceId: String) = finishAnnouncement(utteranceId)
         })
         player.addListener(object : Player.Listener {
-            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || item == null) return
-                completedSongs += 1
-                if (completedSongs % 2 != 0 || !voiceReady || !player.playWhenReady) return
-                val title = item.mediaMetadata.title?.toString()?.trim().orEmpty()
-                if (title.isEmpty()) return
-                val artist = item.mediaMetadata.artist?.toString()?.trim().orEmpty()
-                val announcementId = "radio-intro-${System.currentTimeMillis()}"
-                activeAnnouncement = announcementId
-                player.pause()
-                val message = "Soy DeVi. Sigue $title${if (artist.isNotEmpty()) ", de $artist" else ""}. ¡Que la disfrutes!"
-                if (tts?.speak(message.take(300), TextToSpeech.QUEUE_FLUSH, null, announcementId) != TextToSpeech.SUCCESS) {
-                    finishAnnouncement(announcementId)
+            override fun onPlayerError(error: PlaybackException) {
+                val index = player.currentMediaItemIndex
+                if (player.currentMediaItem?.mediaId?.startsWith("commercial:") == true && index >= 0) {
+                    player.removeMediaItem(index)
+                    if (player.mediaItemCount > 0) {
+                        player.prepare()
+                        player.play()
+                    }
                 }
             }
+            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                val previous = lastMediaId
+                lastMediaId = item?.mediaId
+                if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || item == null) return
+                if (previous?.startsWith("commercial:") == true) {
+                    // The inserted commercial has finished; remove it from the music queue.
+                    val priorIndex = player.currentMediaItemIndex - 1
+                    if (priorIndex >= 0) mainHandler.post { if (priorIndex < player.mediaItemCount && player.getMediaItemAt(priorIndex).mediaId == previous) player.removeMediaItem(priorIndex) }
+                    if (item.mediaId.startsWith("song:")) announceIfDue(item)
+                    return
+                }
+                if (previous?.startsWith("song:") != true || !item.mediaId.startsWith("song:")) return
+                if (songs.size > 1 && previous == songs.last().mediaId && item.mediaId == songs.first().mediaId) {
+                    val next = songs.shuffled().toMutableList()
+                    if (next.first().mediaId == previous) next.add(0, next.removeAt(1))
+                    songs = listOf(item) + next.filter { it.mediaId != item.mediaId }
+                    player.replaceMediaItems(player.currentMediaItemIndex + 1, player.mediaItemCount, songs.drop(1))
+                }
+                elapsedMusicMs += lastSongPositionMs.coerceAtLeast(0)
+                lastSongPositionMs = 0
+                completedSongs += 1
+                pendingIntroduction = completedSongs % 2 == 0
+                pendingFact = completedSongs % 5 == 0
+                if (intervalMinutes >= 5 && commercials.isNotEmpty() && elapsedMusicMs >= intervalMinutes * 60_000L) {
+                    val commercial = commercials[commercialIndex % commercials.size]
+                    commercialIndex += 1
+                    elapsedMusicMs = 0
+                    val nextIndex = player.currentMediaItemIndex
+                    player.addMediaItem(nextIndex, commercial)
+                    player.seekTo(nextIndex, 0)
+                    return
+                }
+                announceIfDue(item)
+            }
         })
+        mainHandler.post(positionRefresh)
+        mainHandler.postDelayed(catalogRefresh, 60_000)
         val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         librarySession = MediaLibrarySession.Builder(this, player, callback)
@@ -167,8 +222,53 @@ class RadioPlaybackService : MediaLibraryService() {
             .build()
     }
 
+    private fun announceIfDue(item: MediaItem) {
+                if (!voiceReady || !player.playWhenReady || (!pendingIntroduction && !pendingFact)) return
+                val introduce = pendingIntroduction
+                pendingIntroduction = false
+                val factDue = pendingFact
+                pendingFact = false
+                val title = item.mediaMetadata.title?.toString()?.trim().orEmpty()
+                if (title.isEmpty() && !factDue) return
+                val artist = item.mediaMetadata.artist?.toString()?.trim().orEmpty()
+                val announcementId = "radio-intro-${System.currentTimeMillis()}"
+                activeAnnouncement = announcementId
+                player.pause()
+                val available = facts.filter { it.id != lastFactId }
+                val fact = if (factDue) available.randomOrNull() ?: facts.randomOrNull() else null
+                lastFactId = fact?.id ?: lastFactId
+                val message = listOfNotNull(
+                    fact?.let { "¿Sabías que? ${it.text}" },
+                    if (introduce && title.isNotEmpty()) "¡Seguimos con $title${if (artist.isNotEmpty()) ", de $artist" else ""}! Soy DeVi; que la disfrutes." else null,
+                ).joinToString(" ")
+                if (message.isBlank() || tts?.speak(message.take(800), TextToSpeech.QUEUE_FLUSH, null, announcementId) != TextToSpeech.SUCCESS) {
+                    finishAnnouncement(announcementId)
+                }
+    }
+
     private fun refreshCatalog() {
-        songs = RadioCatalog.loadSongs()
+        val program = RadioCatalog.loadProgram()
+        if (program.songs.isEmpty() && songs.isNotEmpty()) return
+        val previousFirst = getSharedPreferences("radio", MODE_PRIVATE).getString("first", null)
+        val existing = songs.map { it.mediaId }.toSet()
+        val ordered = if (existing.isEmpty()) program.songs.shuffled().let { shuffled ->
+            if (shuffled.size > 1 && shuffled.first().mediaId == previousFirst)
+                shuffled.toMutableList().apply { add(0, removeAt(1)) } else shuffled
+        } else songs.mapNotNull { prior -> program.songs.find { it.mediaId == prior.mediaId } } +
+            program.songs.filter { it.mediaId !in existing }.shuffled()
+        songs = ordered
+        if (existing.isEmpty()) ordered.firstOrNull()?.let { getSharedPreferences("radio", MODE_PRIVATE).edit().putString("first", it.mediaId).apply() }
+        mainHandler.post {
+            commercials = program.commercials
+            intervalMinutes = program.intervalMinutes
+            facts = program.facts
+            if (player.mediaItemCount > 0 && player.currentMediaItem?.mediaId?.startsWith("song:") == true) {
+                val current = player.currentMediaItem ?: return@post
+                val currentIndex = player.currentMediaItemIndex
+                val tail = ordered.dropWhile { it.mediaId != current.mediaId }.drop(1) + ordered.takeWhile { it.mediaId != current.mediaId }
+                player.replaceMediaItems(currentIndex + 1, player.mediaItemCount, tail)
+            }
+        }
     }
 
     private fun finishAnnouncement(id: String) {
@@ -186,6 +286,8 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(catalogRefresh)
+        mainHandler.removeCallbacks(positionRefresh)
         librarySession.release()
         tts?.stop()
         tts?.shutdown()
