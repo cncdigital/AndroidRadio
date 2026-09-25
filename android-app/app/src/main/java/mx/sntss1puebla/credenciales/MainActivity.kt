@@ -7,8 +7,15 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.graphics.Color
+import android.graphics.Typeface
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.widget.Button
 import android.widget.SeekBar
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
@@ -17,6 +24,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaBrowser
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import java.util.concurrent.Executors
 
 /** Phone player. Android Auto renders the same MediaLibrarySession using its own safe controls. */
 class MainActivity : ComponentActivity() {
@@ -31,6 +39,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var nextButton: Button
     private lateinit var seek: SeekBar
     private lateinit var progress: TextView
+    private lateinit var lyricsView: TextView
+    private lateinit var lyricsScroll: ScrollView
+    private val lyricExecutor = Executors.newSingleThreadExecutor()
+    private var currentLyricSongId = -1
+    private var timedLyrics: List<TimedLyric> = emptyList()
+    private var shownLyricLine = -1
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
@@ -53,6 +67,8 @@ class MainActivity : ComponentActivity() {
         nextButton = findViewById(R.id.next_song)
         seek = findViewById(R.id.song_seek)
         progress = findViewById(R.id.song_progress)
+        lyricsView = findViewById(R.id.song_lyrics)
+        lyricsScroll = findViewById(R.id.lyrics_scroll)
         playButton.setOnClickListener {
             val player = browser
             if (player == null || player.mediaItemCount == 0) startRadio()
@@ -116,6 +132,25 @@ class MainActivity : ComponentActivity() {
         previousButton.isEnabled = player?.hasPreviousMediaItem() == true
         nextButton.isEnabled = player?.hasNextMediaItem() == true
         if (item != null) status.setText(R.string.radio_ready)
+        val songId = item?.mediaId?.removePrefix("song:")?.toIntOrNull() ?: -1
+        if (songId != currentLyricSongId) {
+            currentLyricSongId = songId
+            timedLyrics = emptyList()
+            shownLyricLine = -1
+            lyricsView.setText(R.string.song_lyrics_empty)
+            if (songId > 0) lyricExecutor.execute {
+                val raw = runCatching { RadioLyrics.fetch(songId) }.getOrDefault("")
+                val parsed = RadioLyrics.parse(raw)
+                runOnUiThread {
+                    if (currentLyricSongId != songId || isDestroyed) return@runOnUiThread
+                    timedLyrics = parsed
+                    lyricsView.text = if (parsed.isNotEmpty()) parsed.joinToString("\n") { it.text.ifBlank { "♪" } }
+                        else raw.replace(Regex("(?m)^\\[\\d{1,2}:\\d{2}[^]]*]\\s*"), "").ifBlank { getString(R.string.song_lyrics_empty) }
+                    lyricsScroll.scrollTo(0, 0)
+                    renderLyricProgress()
+                }
+            }
+        }
         renderProgress()
     }
 
@@ -125,6 +160,27 @@ class MainActivity : ComponentActivity() {
         seek.max = duration.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         if (!seek.isPressed) seek.progress = (player?.currentPosition ?: 0L).coerceIn(0L, duration).toInt()
         progress.text = "${formatTime(player?.currentPosition ?: 0L)} / ${formatTime(duration)}"
+        renderLyricProgress()
+    }
+
+    private fun renderLyricProgress() {
+        if (timedLyrics.isEmpty()) return
+        val position = browser?.currentPosition ?: return
+        val current = timedLyrics.indexOfLast { it.atMs <= position }
+        if (current == shownLyricLine || current < 0) return
+        shownLyricLine = current
+        val offsets = timedLyrics.map { it.text.ifBlank { "♪" } }
+        val full = offsets.joinToString("\n")
+        val begin = offsets.take(current).sumOf { it.length + 1 }
+        val end = begin + offsets[current].length
+        val styled = SpannableString(full)
+        styled.setSpan(ForegroundColorSpan(Color.rgb(242, 179, 33)), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        styled.setSpan(StyleSpan(Typeface.BOLD), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        lyricsView.text = styled
+        lyricsView.post {
+            val line = lyricsView.layout?.getLineForOffset(begin) ?: return@post
+            lyricsScroll.smoothScrollTo(0, (lyricsView.layout.getLineTop(line) - lyricsScroll.height / 3).coerceAtLeast(0))
+        }
     }
 
     private fun formatTime(milliseconds: Long): String {
@@ -135,6 +191,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         handler.removeCallbacks(tick)
         browser?.removeListener(listener)
+        lyricExecutor.shutdownNow()
         MediaBrowser.releaseFuture(browserFuture)
         super.onDestroy()
     }

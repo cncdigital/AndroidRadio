@@ -2,6 +2,11 @@ package mx.sntss1puebla.credenciales
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import java.util.Locale
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -23,6 +28,11 @@ import java.util.concurrent.Executors
 /** Exposes the authorized portal library to Android Auto's driver-safe media UI. */
 class RadioPlaybackService : MediaLibraryService() {
     private val catalogExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var tts: TextToSpeech? = null
+    private var voiceReady = false
+    private var completedSongs = 0
+    private var activeAnnouncement: String? = null
     @Volatile private var songs: List<MediaItem> = emptyList()
     private lateinit var httpFactory: DefaultHttpDataSource.Factory
     private lateinit var player: ExoPlayer
@@ -117,6 +127,39 @@ class RadioPlaybackService : MediaLibraryService() {
                 setWakeMode(C.WAKE_MODE_NETWORK)
                 repeatMode = Player.REPEAT_MODE_ALL
             }
+        tts = TextToSpeech(this) { result ->
+            mainHandler.post {
+                voiceReady = result == TextToSpeech.SUCCESS
+                if (voiceReady) {
+                    val language = tts?.setLanguage(Locale("es", "MX")) ?: TextToSpeech.LANG_NOT_SUPPORTED
+                    voiceReady = language != TextToSpeech.LANG_MISSING_DATA && language != TextToSpeech.LANG_NOT_SUPPORTED
+                    tts?.setSpeechRate(1.1f)
+                    tts?.setPitch(1.05f)
+                }
+            }
+        }
+        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String) = Unit
+            override fun onDone(utteranceId: String) = finishAnnouncement(utteranceId)
+            override fun onError(utteranceId: String) = finishAnnouncement(utteranceId)
+        })
+        player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || item == null) return
+                completedSongs += 1
+                if (completedSongs % 2 != 0 || !voiceReady || !player.playWhenReady) return
+                val title = item.mediaMetadata.title?.toString()?.trim().orEmpty()
+                if (title.isEmpty()) return
+                val artist = item.mediaMetadata.artist?.toString()?.trim().orEmpty()
+                val announcementId = "radio-intro-${System.currentTimeMillis()}"
+                activeAnnouncement = announcementId
+                player.pause()
+                val message = "Soy DeVi. Sigue $title${if (artist.isNotEmpty()) ", de $artist" else ""}. ¡Que la disfrutes!"
+                if (tts?.speak(message.take(300), TextToSpeech.QUEUE_FLUSH, null, announcementId) != TextToSpeech.SUCCESS) {
+                    finishAnnouncement(announcementId)
+                }
+            }
+        })
         val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         librarySession = MediaLibrarySession.Builder(this, player, callback)
@@ -128,14 +171,24 @@ class RadioPlaybackService : MediaLibraryService() {
         songs = RadioCatalog.loadSongs()
     }
 
+    private fun finishAnnouncement(id: String) {
+        mainHandler.post {
+            if (activeAnnouncement != id) return@post
+            activeAnnouncement = null
+            if (player.mediaItemCount > 0) player.play()
+        }
+    }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = librarySession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if (!player.playWhenReady || player.mediaItemCount == 0) stopSelf()
+        if ((!player.playWhenReady && activeAnnouncement == null) || player.mediaItemCount == 0) stopSelf()
     }
 
     override fun onDestroy() {
         librarySession.release()
+        tts?.stop()
+        tts?.shutdown()
         player.release()
         catalogExecutor.shutdownNow()
         super.onDestroy()

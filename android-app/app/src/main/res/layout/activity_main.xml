@@ -41,5 +41,16 @@
             android:layout_height="wrap_content" android:layout_marginTop="18dp"
             android:gravity="center" android:text="@string/radio_ready"
             android:textColor="#CADCE9" android:textSize="15sp" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="28dp" android:text="@string/song_lyrics_title"
+            android:textColor="@color/sntss_gold" android:textSize="18sp" android:textStyle="bold" />
+        <ScrollView android:id="@+id/lyrics_scroll" android:layout_width="match_parent"
+            android:layout_height="190dp" android:layout_marginTop="8dp"
+            android:background="#123751" android:fillViewport="true" android:nestedScrollingEnabled="true">
+            <TextView android:id="@+id/song_lyrics" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:padding="16dp"
+                android:text="@string/song_lyrics_empty" android:textColor="@android:color/white"
+                android:textSize="16sp" android:lineSpacingExtra="6dp" />
+        </ScrollView>
     </LinearLayout>
 </ScrollView>
