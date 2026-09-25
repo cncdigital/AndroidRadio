@@ -125,9 +125,7 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private fun refreshCatalog() {
-        val cookie = RadioCatalog.sessionCookie()
-        httpFactory.setDefaultRequestProperties(if (cookie.isBlank()) emptyMap() else mapOf("Cookie" to cookie))
-        songs = if (cookie.isBlank()) emptyList() else RadioCatalog.loadSongs()
+        songs = RadioCatalog.loadSongs()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = librarySession

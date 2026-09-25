@@ -1,20 +1,13 @@
-# SNTSS1Puebla en Android y Android Auto
+# Radio Sindical para Android y Android Auto
 
-La app abre el portal oficial en el teléfono y ofrece Radio Sindical como biblioteca musical nativa en Android Auto. Usa Media3 `MediaLibraryService` para mostrar canciones y controles del automóvil. La app necesita una sesión válida iniciada en el portal desde el teléfono; la API del catálogo y el audio requieren esa sesión. No registra cookies ni incluye claves en el repositorio.
+La app abre directamente el reproductor nativo, sin WebView ni inicio de sesión. Android Auto muestra el catálogo público de canciones activas mediante `MediaLibraryService`. Las rutas públicas `/api/radio/catalog` y `/api/radio/audio/:id` no exponen archivos administrativos ni comerciales; la administración y el catálogo privado del portal siguen protegidos.
 
-## Uso
+## Actualizar una instalación anterior
 
-1. Instala la app en el teléfono y accede a `https://sntss1puebla.com/` con tu cuenta autorizada.
-2. Toca **Reproducir Radio Sindical en Android Auto** para iniciar la biblioteca en el teléfono, o conecta Android Auto y abre **Credenciales SNTSS1Puebla > Biblioteca musical**.
-3. Puedes seleccionar una canción, avanzar, pausar y reanudar desde los controles del automóvil.
+Se conserva el paquete `mx.sntss1puebla.credenciales`; la nueva versión incrementa `versionCode` de 1 a 2. Para instalar la actualización encima del APK anterior **se necesita la misma clave y certificado con que fue firmado** `RadioSindical-debug.apk`. Compila y firma desde el mismo entorno/keystore usado para el APK anterior. No cambies el `applicationId` ni firmes con otra clave. El nombre y el icono se actualizan al instalar la nueva versión; el sistema podría pedir al usuario autorizar la actualización, pero no instalará una segunda app.
 
-La música se obtiene del catálogo protegido del portal y utiliza 192 kbps cuando esa versión existe; de lo contrario, 320 kbps. El catálogo se vuelve a consultar al abrir la biblioteca. La programación web (comerciales, voz de DeVi, anuncios en vivo y letras) todavía pertenece al reproductor web y no forma parte de esta reproducción nativa. La sesión del portal puede caducar; si deja de verse la biblioteca, vuelve a iniciar sesión desde el teléfono.
+El certificado del APK que se compartió tiene huella SHA-256 `6D:64:06:B1:FF:DE:EB:8D:93:94:F4:50:84:27:BE:3A:14:B6:DB:12:5E:E5:9F:06:FB:E3:71:B9:38:AE:90:AE`. Comprueba esta huella en el APK nuevo antes de ofrecerlo como actualización. La huella permite verificar la firma; no sustituye la clave privada original.
 
 ## Compilar
 
-1. Abre `android-app` en Android Studio con JDK 17.
-2. Instala Android SDK 36 y sincroniza Gradle (el proyecto declara Android Gradle Plugin 8.10.1).
-3. Selecciona **Build > Build APK(s)** para pruebas en un teléfono y un entorno Android Auto de desarrollo.
-4. Para distribución, firma el paquete con una clave institucional conservada fuera del repositorio y comprueba la experiencia en un vehículo o en Desktop Head Unit.
-
-Paquete `mx.sntss1puebla.credenciales`; Android mínimo 8.0 (API 26). El código no contiene archivos MP3, credenciales ni registros personales.
+Abre `android-app` en Android Studio, usa JDK 17 y Android SDK 36, sincroniza Gradle y crea el APK con la clave original. Comprueba reproducción en teléfono y en el emulador Android Auto antes de distribuirlo. El código no incluye MP3, credenciales ni datos de personas.

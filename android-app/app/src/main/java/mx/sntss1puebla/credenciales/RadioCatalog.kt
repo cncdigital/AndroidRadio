@@ -1,6 +1,5 @@
 package mx.sntss1puebla.credenciales
 
-import android.webkit.CookieManager
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
@@ -8,23 +7,18 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** The car receives only songs the signed-in portal already allows this device to play. */
+/** The car receives the public listening catalog, without administrative records. */
 internal object RadioCatalog {
     const val ORIGIN = "https://sntss1puebla.com"
     const val ROOT_ID = "radio-root"
     const val SONGS_ID = "radio-songs"
 
-    fun sessionCookie(): String = CookieManager.getInstance().getCookie(ORIGIN).orEmpty()
-
     fun loadSongs(): List<MediaItem> {
-        val cookies = sessionCookie()
-        if (cookies.isBlank()) return emptyList()
-        val connection = (URL("$ORIGIN/api/news/mp3").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("$ORIGIN/api/radio/catalog").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 5_000
             readTimeout = 7_000
             instanceFollowRedirects = false
-            setRequestProperty("Cookie", cookies)
             setRequestProperty("Accept", "application/json")
         }
         return try {
@@ -42,7 +36,7 @@ internal object RadioCatalog {
                     val preferred = if ((0 until (qualities?.length() ?: 0)).any { qualities?.optInt(it) == 192 }) "?quality=192" else ""
                     add(MediaItem.Builder()
                         .setMediaId("song:$id")
-                        .setUri("$ORIGIN/api/news/mp3/$id$preferred")
+                        .setUri("$ORIGIN/api/radio/audio/$id$preferred")
                         .setMimeType(MimeTypes.AUDIO_MPEG)
                         .setMediaMetadata(MediaMetadata.Builder()
                             .setTitle(title)

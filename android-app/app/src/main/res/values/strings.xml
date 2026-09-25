@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Credenciales SNTSS1Puebla</string>
+    <string name="app_name">Radio Sindical</string>
     <string name="radio_title">Radio Sindical</string>
     <string name="radio_subtitle">La voz de quienes hacen grande al IMSS</string>
     <string name="radio_connecting">Preparando Radio Sindical…</string>
-    <string name="radio_sign_in">Inicia sesión en el portal para escuchar la biblioteca musical.</string>
-    <string name="play_radio_car">▶ Reproducir Radio Sindical en Android Auto</string>
+    <string name="radio_sign_in">No se pudo cargar la biblioteca. Revisa tu conexión e inténtalo de nuevo.</string>
+    <string name="play_radio_car">Reproducir</string>
+    <string name="radio_paused">Pausar</string>
+    <string name="radio_previous">Anterior</string>
+    <string name="radio_next">Siguiente</string>
+    <string name="radio_ready">Tu música, también en Android Auto.</string>
 </resources>

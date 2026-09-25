@@ -11,12 +11,29 @@ android {
         applicationId = "mx.sntss1puebla.credenciales"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    // Clave permanente: se toma de variables de entorno (secrets de GitHub), nunca del repositorio.
+    val keystorePath = System.getenv("ANDROID_KEYSTORE_FILE")
+    val keystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+    val hasSharedKey = !keystorePath.isNullOrBlank() && !keystorePassword.isNullOrBlank()
+
+    signingConfigs {
+        if (hasSharedKey) {
+            create("shared") {
+                storeFile = file(keystorePath!!)
+                storePassword = keystorePassword
+                keyAlias = "radiosindical"
+                keyPassword = keystorePassword
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (hasSharedKey) signingConfig = signingConfigs.getByName("shared")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
