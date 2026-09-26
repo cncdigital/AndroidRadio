@@ -5,6 +5,8 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.net.Uri
+import java.net.HttpURLConnection
+import java.net.URL
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -26,11 +28,16 @@ import java.util.concurrent.Executors
 
 /** Exposes the authorized portal library to Android Auto's driver-safe media UI. */
 class RadioPlaybackService : MediaLibraryService() {
+    companion object {
+        const val ACTION_CLOSE_RADIO = "mx.sntss1puebla.credenciales.action.CLOSE_RADIO"
+        const val ACTION_NETWORK_WARNING = "mx.sntss1puebla.credenciales.action.NETWORK_WARNING"
+        private const val RADIO_VOICE_NORMALIZED_VOLUME = 0.72f // 98 dB radio reference
+    }
+
     private val catalogExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var voicePlayer: ExoPlayer
     private var announcementStarted = false
-    private var musicVolumeBeforeAnnouncement = 1f
     private var completedSongs = 0
     private var elapsedMusicMs = 0L
     private var lastSongPositionMs = 0L
@@ -56,6 +63,17 @@ class RadioPlaybackService : MediaLibraryService() {
         }
     }
     private var activeAnnouncement: String? = null
+    private var lastNetworkWarningAt = 0L
+    private val networkProbe = object : Runnable {
+        override fun run() {
+            if (::player.isInitialized && player.isPlaying) {
+                catalogExecutor.execute {
+                    if (probeConnectionIsSlow()) mainHandler.post { announceConnectionWarning() }
+                }
+            }
+            mainHandler.postDelayed(this, 30_000)
+        }
+    }
     @Volatile private var songs: List<MediaItem> = emptyList()
     private lateinit var httpFactory: DefaultHttpDataSource.Factory
     private lateinit var player: ExoPlayer
@@ -157,6 +175,7 @@ class RadioPlaybackService : MediaLibraryService() {
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
                     .build(), false)
+                volume = RADIO_VOICE_NORMALIZED_VOLUME
             }
         voicePlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
@@ -165,12 +184,7 @@ class RadioPlaybackService : MediaLibraryService() {
                     if (!player.isPlaying) finishAnnouncement()
                     else {
                         announcementStarted = true
-                        musicVolumeBeforeAnnouncement = player.volume.coerceIn(0f, 1f)
-                        voicePlayer.volume = 1f
-                        // Leave clear headroom for DeVi without clipping the speech channel.
-                        // La música puede venir masterizada muy fuerte; deja espacio
-                        // real para que la locutora se entienda sin gritar.
-                        fadeMusicVolume((musicVolumeBeforeAnnouncement * 0.035f).coerceAtLeast(0.015f), 320L)
+                        player.volume = 0.10f
                     }
                 } else if (state == Player.STATE_ENDED) finishAnnouncement()
             }
@@ -178,6 +192,7 @@ class RadioPlaybackService : MediaLibraryService() {
         })
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
+                announceConnectionWarning()
                 val index = player.currentMediaItemIndex
                 if (player.currentMediaItem?.mediaId?.startsWith("commercial:") == true && index >= 0) {
                     player.removeMediaItem(index)
@@ -213,8 +228,12 @@ class RadioPlaybackService : MediaLibraryService() {
                 elapsedMusicMs += lastSongPositionMs.coerceAtLeast(0)
                 lastSongPositionMs = 0
                 completedSongs += 1
-                pendingIntroduction = true
+                pendingIntroduction = completedSongs % 2 == 0
                 pendingFact = completedSongs % 5 == 0
+                if (!pendingIntroduction && !pendingFact) {
+                    val capsuleTrackId = item.mediaId.removePrefix("song:").toIntOrNull()
+                    if (capsuleTrackId != null) catalogExecutor.execute { prewarmCapsule(capsuleTrackId, completedSongs % 16) }
+                }
                 if (intervalMinutes >= 5 && commercials.isNotEmpty() && elapsedMusicMs >= intervalMinutes * 60_000L) {
                     val commercial = commercials[commercialIndex % commercials.size]
                     commercialIndex += 1
@@ -233,11 +252,46 @@ class RadioPlaybackService : MediaLibraryService() {
         })
         mainHandler.post(positionRefresh)
         mainHandler.postDelayed(catalogRefresh, 60_000)
+        mainHandler.postDelayed(networkProbe, 30_000)
         val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         librarySession = MediaLibrarySession.Builder(this, player, callback)
             .setSessionActivity(openApp)
             .build()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_CLOSE_RADIO) {
+            if (::player.isInitialized) player.stop()
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        // Keep the media service eligible for restart if Android reclaims the
+        // process while an active playback session is still in use.
+        return START_STICKY
+    }
+
+    private fun probeConnectionIsSlow(): Boolean {
+        val started = System.nanoTime()
+        val connection = runCatching {
+            (java.net.URL("${RadioCatalog.ORIGIN}/api/radio/catalog?probe=${System.currentTimeMillis()}").openConnection() as java.net.HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 2_500
+                readTimeout = 2_500
+                setRequestProperty("Accept", "application/json")
+                inputStream.use { stream -> stream.read(ByteArray(512)) }
+            }
+        }.getOrNull() ?: return true
+        connection.disconnect()
+        return (System.nanoTime() - started) / 1_000_000 > 2_500
+    }
+
+    private fun announceConnectionWarning() {
+        val now = System.currentTimeMillis()
+        if (now - lastNetworkWarningAt < 120_000 || !::player.isInitialized || !player.isPlaying) return
+        lastNetworkWarningAt = now
+        val message = "Conexión lenta o inestable: la reproducción podría verse afectada."
+        sendBroadcast(Intent(ACTION_NETWORK_WARNING).setPackage(packageName).putExtra("message", message))
     }
 
     private fun announceIfDue(item: MediaItem) {
@@ -248,16 +302,18 @@ class RadioPlaybackService : MediaLibraryService() {
         pendingFact = false
         val fact = if (factDue) facts.filter { it.id != lastFactId }.randomOrNull() ?: facts.randomOrNull() else null
         lastFactId = fact?.id ?: lastFactId
-        val style = completedSongs % 12
+        val style = completedSongs % 16
         val url = Uri.parse("https://sntss1puebla.com/api/radio/voice").buildUpon()
             .appendQueryParameter("trackId", trackId.toString())
             .appendQueryParameter("style", style.toString())
+            .appendQueryParameter("client", "android-auto")
             .apply { if (fact != null) appendQueryParameter("factId", fact.id) }
             .build()
         val id = "radio-voice-${System.currentTimeMillis()}"
         activeAnnouncement = id
         announcementStarted = false
         voicePlayer.stop()
+        voicePlayer.volume = RADIO_VOICE_NORMALIZED_VOLUME
         voicePlayer.setMediaItem(MediaItem.fromUri(url))
         voicePlayer.prepare()
         voicePlayer.play()
@@ -265,8 +321,31 @@ class RadioPlaybackService : MediaLibraryService() {
         mainHandler.postDelayed({ if (activeAnnouncement == id && !announcementStarted) finishAnnouncement() }, 12_000)
     }
 
+    /** Generate and persist the next song capsule without interrupting playback. */
+    private fun prewarmCapsule(trackId: Int, style: Int) {
+        runCatching {
+            val url = Uri.parse("https://sntss1puebla.com/api/radio/voice").buildUpon()
+                .appendQueryParameter("trackId", trackId.toString())
+                .appendQueryParameter("style", style.toString())
+                .appendQueryParameter("client", "android-auto")
+                .appendQueryParameter("prepare", "1")
+                .build()
+            val connection = (URL(url.toString()).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 5_000
+                readTimeout = 15_000
+                setRequestProperty("Accept", "audio/mpeg")
+            }
+            connection.inputStream.use { stream ->
+                val buffer = ByteArray(8_192)
+                while (stream.read(buffer) >= 0) { /* Persisted by the server; discard locally. */ }
+            }
+            connection.disconnect()
+        }
+    }
+
     private fun refreshCatalog() {
-        val program = RadioCatalog.loadProgram(this)
+        val program = RadioCatalog.loadProgram()
         if (program.songs.isEmpty() && songs.isNotEmpty()) return
         val previousFirst = getSharedPreferences("radio", MODE_PRIVATE).getString("first", null)
         val existing = songs.map { it.mediaId }.toSet()
@@ -290,41 +369,27 @@ class RadioPlaybackService : MediaLibraryService() {
         }
     }
 
-    private fun fadeMusicVolume(targetVolume: Float, durationMs: Long) {
-        val startVolume = player.volume.coerceIn(0f, 1f)
-        val target = targetVolume.coerceIn(0f, 1f)
-        val steps = 8
-        for (step in 1..steps) {
-            mainHandler.postDelayed({
-                if (::player.isInitialized) {
-                    val fraction = step.toFloat() / steps.toFloat()
-                    player.volume = startVolume + ((target - startVolume) * fraction)
-                }
-            }, durationMs * step / steps)
-        }
-    }
-
     private fun finishAnnouncement() {
         if (activeAnnouncement == null) return
         activeAnnouncement = null
-        val restoreVolume = musicVolumeBeforeAnnouncement.coerceIn(0f, 1f)
         announcementStarted = false
+        player.volume = 1f
         voicePlayer.stop()
         voicePlayer.clearMediaItems()
-        // DeVi keeps an independent full-volume speech channel. Restore the exact
-        // music level chosen by the listener instead of forcing the radio to 100%.
-        fadeMusicVolume(restoreVolume, 440L)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = librarySession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if ((!player.playWhenReady && activeAnnouncement == null) || player.mediaItemCount == 0) stopSelf()
+        // Swiping the UI away or minimizing it must not stop the radio. The
+        // explicit Cerrar app action above is the only user-requested stop.
+        if (!player.playWhenReady && activeAnnouncement == null && player.mediaItemCount == 0) stopSelf()
     }
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(catalogRefresh)
         mainHandler.removeCallbacks(positionRefresh)
+        mainHandler.removeCallbacks(networkProbe)
         librarySession.release()
         finishAnnouncement()
         voicePlayer.release()
