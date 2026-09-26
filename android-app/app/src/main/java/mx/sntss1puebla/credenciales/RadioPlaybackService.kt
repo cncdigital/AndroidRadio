@@ -14,6 +14,11 @@ import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.LibraryResult
@@ -25,6 +30,7 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import java.util.concurrent.Executors
+import java.io.File
 
 /** Exposes the authorized portal library to Android Auto's driver-safe media UI. */
 class RadioPlaybackService : MediaLibraryService() {
@@ -76,6 +82,8 @@ class RadioPlaybackService : MediaLibraryService() {
     }
     @Volatile private var songs: List<MediaItem> = emptyList()
     private lateinit var httpFactory: DefaultHttpDataSource.Factory
+    private lateinit var audioCache: SimpleCache
+    private lateinit var cacheFactory: CacheDataSource.Factory
     private lateinit var player: ExoPlayer
     private lateinit var librarySession: MediaLibrarySession
 
@@ -157,8 +165,18 @@ class RadioPlaybackService : MediaLibraryService() {
         httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(false)
             .setUserAgent("SNTSS1Puebla-Radio-Android/1.0")
+        audioCache = SimpleCache(
+            File(cacheDir, "radio-audio-cache"),
+            LeastRecentlyUsedCacheEvictor(250L * 1024L * 1024L),
+            StandaloneDatabaseProvider(this),
+        )
+        val upstreamFactory = DefaultDataSource.Factory(this, httpFactory)
+        cacheFactory = CacheDataSource.Factory()
+            .setCache(audioCache)
+            .setUpstreamDataSourceFactory(upstreamFactory)
+            .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(httpFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory))
             .build().apply {
                 setAudioAttributes(AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -169,7 +187,7 @@ class RadioPlaybackService : MediaLibraryService() {
                 repeatMode = Player.REPEAT_MODE_ALL
             }
         voicePlayer = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(httpFactory))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory))
             .build().apply {
                 setAudioAttributes(AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -394,6 +412,7 @@ class RadioPlaybackService : MediaLibraryService() {
         finishAnnouncement()
         voicePlayer.release()
         player.release()
+        audioCache.release()
         catalogExecutor.shutdownNow()
         super.onDestroy()
     }
