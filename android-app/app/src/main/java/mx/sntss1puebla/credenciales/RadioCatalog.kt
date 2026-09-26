@@ -1,5 +1,8 @@
 package mx.sntss1puebla.credenciales
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
@@ -16,9 +19,9 @@ internal object RadioCatalog {
     const val ROOT_ID = "radio-root"
     const val SONGS_ID = "radio-songs"
 
-    fun loadSongs(): List<MediaItem> = loadProgram().songs
+    fun loadSongs(context: Context? = null): List<MediaItem> = loadProgram(context).songs
 
-    fun loadProgram(): Program {
+    fun loadProgram(context: Context? = null): Program {
         val connection = (URL("$ORIGIN/api/radio/catalog").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 5_000
@@ -39,8 +42,11 @@ internal object RadioCatalog {
                     val id = track.optInt("id")
                     val title = track.optString("title").trim()
                     if (id <= 0 || title.isEmpty()) continue
-                    val qualities = track.optJSONArray("availableQualities")
-                    val preferred = if ((0 until (qualities?.length() ?: 0)).any { qualities?.optInt(it) == 192 }) "?quality=192" else ""
+                    val qualities = (0 until (track.optJSONArray("availableQualities")?.length() ?: 0))
+                        .mapNotNull { track.optJSONArray("availableQualities")?.optInt(it) }
+                        .toSet()
+                    val preferredQuality = preferredQuality(context, qualities)
+                    val preferred = if (preferredQuality < 320) "?quality=$preferredQuality" else ""
                     val cover = if (commercial) null else track.optString("coverUrl").takeIf { it.startsWith("/api/radio/cover/") }
                     add(MediaItem.Builder()
                         .setMediaId("${if (commercial) "commercial" else "song"}:$id")
@@ -71,6 +77,30 @@ internal object RadioCatalog {
                 })
         } finally {
             connection.disconnect()
+        }
+    }
+
+    /** Selects a stream that the current network can sustain without buffering. */
+    private fun preferredQuality(context: Context?, available: Set<Int>): Int {
+        val desired = runCatching {
+            val manager = context?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val network = manager?.activeNetwork
+            val capabilities = network?.let { manager.getNetworkCapabilities(it) }
+            if (capabilities == null || !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return@runCatching 96
+            val downstream = capabilities.linkDownstreamBandwidthKbps
+            when {
+                downstream in 1..1_999 -> 96
+                downstream in 2_000..5_999 -> 192
+                downstream >= 6_000 -> 320
+                else -> 192
+            }
+        }.getOrDefault(192)
+        return when {
+            desired <= 96 && 96 in available -> 96
+            desired <= 192 && 192 in available -> 192
+            320 in available -> 320
+            192 in available -> 192
+            else -> 96
         }
     }
 

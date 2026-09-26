@@ -167,7 +167,8 @@ class RadioPlaybackService : MediaLibraryService() {
                         announcementStarted = true
                         musicVolumeBeforeAnnouncement = player.volume.coerceIn(0f, 1f)
                         voicePlayer.volume = 1f
-                        fadeMusicVolume((musicVolumeBeforeAnnouncement * 0.18f).coerceAtLeast(0.04f), 320L)
+                        // Leave clear headroom for DeVi without clipping the speech channel.
+                        fadeMusicVolume((musicVolumeBeforeAnnouncement * 0.08f).coerceAtLeast(0.025f), 320L)
                     }
                 } else if (state == Player.STATE_ENDED) finishAnnouncement()
             }
@@ -263,7 +264,7 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private fun refreshCatalog() {
-        val program = RadioCatalog.loadProgram()
+        val program = RadioCatalog.loadProgram(this)
         if (program.songs.isEmpty() && songs.isNotEmpty()) return
         val previousFirst = getSharedPreferences("radio", MODE_PRIVATE).getString("first", null)
         val existing = songs.map { it.mediaId }.toSet()
