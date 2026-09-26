@@ -168,7 +168,9 @@ class RadioPlaybackService : MediaLibraryService() {
                         musicVolumeBeforeAnnouncement = player.volume.coerceIn(0f, 1f)
                         voicePlayer.volume = 1f
                         // Leave clear headroom for DeVi without clipping the speech channel.
-                        fadeMusicVolume((musicVolumeBeforeAnnouncement * 0.08f).coerceAtLeast(0.025f), 320L)
+                        // La música puede venir masterizada muy fuerte; deja espacio
+                        // real para que la locutora se entienda sin gritar.
+                        fadeMusicVolume((musicVolumeBeforeAnnouncement * 0.035f).coerceAtLeast(0.015f), 320L)
                     }
                 } else if (state == Player.STATE_ENDED) finishAnnouncement()
             }
