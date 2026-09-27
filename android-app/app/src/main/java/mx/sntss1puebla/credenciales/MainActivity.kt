@@ -2,6 +2,10 @@ package mx.sntss1puebla.credenciales
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -21,11 +25,14 @@ import android.text.style.RelativeSizeSpan
 import android.widget.ImageView
 import android.view.View
 import android.view.WindowManager
+import android.view.MotionEvent
 import android.widget.FrameLayout
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Spinner
+import android.widget.ArrayAdapter
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -46,11 +53,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var title: TextView
     private lateinit var artist: TextView
     private lateinit var status: TextView
+    private lateinit var networkWarning: TextView
     private lateinit var playButton: Button
     private lateinit var previousButton: Button
     private lateinit var nextButton: Button
     private lateinit var seek: SeekBar
     private lateinit var progress: TextView
+    private lateinit var bitrate: TextView
+    private lateinit var qualitySpinner: Spinner
     private lateinit var lyricsView: TextView
     private lateinit var lyricsScroll: ScrollView
     private lateinit var cover: ImageView
@@ -62,6 +72,38 @@ class MainActivity : ComponentActivity() {
     private var currentLyricSongId = -1
     private var timedLyrics: List<TimedLyric> = emptyList()
     private var shownLyricLine = -1
+    private var dragStartX = 0f
+    private var dragStartY = 0f
+    private var lyricStartX = 0f
+    private var lyricStartY = 0f
+
+    private fun floatingLyricDragListener(root: FrameLayout, lyric: TextView): View.OnTouchListener =
+        View.OnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    dragStartX = event.rawX
+                    dragStartY = event.rawY
+                    lyricStartX = lyric.translationX
+                    lyricStartY = lyric.translationY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val maxX = ((root.width - lyric.width) / 2f).coerceAtLeast(0f)
+                    val maxY = ((root.height - lyric.height) / 2f).coerceAtLeast(0f)
+                    lyric.translationX = (lyricStartX + event.rawX - dragStartX).coerceIn(-maxX, maxX)
+                    lyric.translationY = (lyricStartY + event.rawY - dragStartY).coerceIn(-maxY, maxY)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                else -> false
+            }
+        }
+    private val networkWarningReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            networkWarning.text = intent?.getStringExtra("message").orEmpty()
+            networkWarning.visibility = if (networkWarning.text.isNullOrBlank()) View.GONE else View.VISIBLE
+        }
+    }
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
@@ -79,16 +121,38 @@ class MainActivity : ComponentActivity() {
         title = findViewById(R.id.song_title)
         artist = findViewById(R.id.song_artist)
         status = findViewById(R.id.radio_status)
+        networkWarning = findViewById(R.id.network_warning)
         playButton = findViewById(R.id.play_native_radio)
         previousButton = findViewById(R.id.previous_song)
         nextButton = findViewById(R.id.next_song)
         seek = findViewById(R.id.song_seek)
         progress = findViewById(R.id.song_progress)
+        bitrate = findViewById(R.id.song_bitrate)
+        qualitySpinner = findViewById(R.id.quality_spinner)
         lyricsView = findViewById(R.id.song_lyrics)
         lyricsScroll = findViewById(R.id.lyrics_scroll)
         cover = findViewById(R.id.song_cover)
         ghost = findViewById(R.id.ghost_lyric)
+        findViewById<Button>(R.id.close_radio).setOnClickListener { closeRadioApp() }
+        findViewById<Button>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
         findViewById<Button>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
+        val qualityLabels = listOf(
+            getString(R.string.radio_quality_auto), getString(R.string.radio_quality_96),
+            getString(R.string.radio_quality_192), getString(R.string.radio_quality_320)
+        )
+        qualitySpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, qualityLabels)
+        val savedQuality = getSharedPreferences("radio", MODE_PRIVATE).getInt("quality", 0)
+        qualitySpinner.setSelection(listOf(0, 96, 192, 320).indexOf(savedQuality).coerceAtLeast(0))
+        qualitySpinner.setOnItemSelectedListener(object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = listOf(0, 96, 192, 320)[position]
+                getSharedPreferences("radio", MODE_PRIVATE).edit().putInt("quality", selected).apply()
+                updateBitrateLabel()
+            }
+        })
+        updateBitrateLabel()
+        ContextCompat.registerReceiver(this, networkWarningReceiver, IntentFilter(RadioPlaybackService.ACTION_NETWORK_WARNING), ContextCompat.RECEIVER_NOT_EXPORTED)
         playButton.setOnClickListener {
             val player = browser
             if (player == null || player.mediaItemCount == 0) startRadio()
@@ -141,6 +205,12 @@ class MainActivity : ComponentActivity() {
             controller.play()
             render()
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun closeRadioApp() {
+        browser?.stop()
+        startService(Intent(this, RadioPlaybackService::class.java).setAction(RadioPlaybackService.ACTION_CLOSE_RADIO))
+        finishAndRemoveTask()
     }
 
     private fun render() {
@@ -219,7 +289,16 @@ class MainActivity : ComponentActivity() {
         seek.max = duration.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         if (!seek.isPressed) seek.progress = (player?.currentPosition ?: 0L).coerceIn(0L, duration).toInt()
         progress.text = "${formatTime(player?.currentPosition ?: 0L)} / ${formatTime(duration)}"
+        updateBitrateLabel()
         renderLyricProgress()
+    }
+
+    private fun updateBitrateLabel() {
+        if (!::bitrate.isInitialized) return
+        val prefs = getSharedPreferences("radio", MODE_PRIVATE)
+        val manual = prefs.getInt("quality", 0)
+        val effective = if (manual in setOf(96, 192, 320)) manual else RadioCatalog.qualityFor(this)
+        bitrate.text = "Bitrate: ${effective} kbps${if (manual == 0) " · automático" else " · manual"}"
     }
 
     private fun renderLyricProgress() {
@@ -269,6 +348,10 @@ class MainActivity : ComponentActivity() {
         }
         dialog.setOnDismissListener { if (fullScreen === dialog) fullScreen = null }
         dialog.findViewById<Button>(R.id.full_close).setOnClickListener { dialog.dismiss() }
+        val fullLyric = dialog.findViewById<TextView>(R.id.full_lyric)
+        val dragLyric = floatingLyricDragListener(fullRoot, fullLyric)
+        fullLyric.setOnTouchListener(dragLyric)
+        dialog.findViewById<Button>(R.id.full_lyric_move).setOnTouchListener(dragLyric)
         dialog.findViewById<Button>(R.id.full_previous).setOnClickListener { browser?.seekToPreviousMediaItem() }
         dialog.findViewById<Button>(R.id.full_next).setOnClickListener { browser?.seekToNextMediaItem() }
         dialog.findViewById<Button>(R.id.full_play).setOnClickListener {
@@ -298,6 +381,7 @@ class MainActivity : ComponentActivity() {
         fullScreen?.dismiss()
         handler.removeCallbacks(tick)
         browser?.removeListener(listener)
+        unregisterReceiver(networkWarningReceiver)
         lyricExecutor.shutdownNow()
         MediaBrowser.releaseFuture(browserFuture)
         super.onDestroy()

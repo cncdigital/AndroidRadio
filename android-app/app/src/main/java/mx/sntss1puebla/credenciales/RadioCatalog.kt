@@ -1,8 +1,5 @@
 package mx.sntss1puebla.credenciales
 
-import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
@@ -10,6 +7,9 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import android.net.Uri
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 
 /** The car receives the public listening catalog, without administrative records. */
 internal object RadioCatalog {
@@ -19,9 +19,9 @@ internal object RadioCatalog {
     const val ROOT_ID = "radio-root"
     const val SONGS_ID = "radio-songs"
 
-    fun loadSongs(context: Context? = null): List<MediaItem> = loadProgram(context).songs
+    fun loadSongs(preferredQuality: Int? = null): List<MediaItem> = loadProgram(preferredQuality).songs
 
-    fun loadProgram(context: Context? = null): Program {
+    fun loadProgram(preferredQuality: Int? = null): Program {
         val connection = (URL("$ORIGIN/api/radio/catalog").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 5_000
@@ -42,11 +42,11 @@ internal object RadioCatalog {
                     val id = track.optInt("id")
                     val title = track.optString("title").trim()
                     if (id <= 0 || title.isEmpty()) continue
-                    val qualities = (0 until (track.optJSONArray("availableQualities")?.length() ?: 0))
-                        .mapNotNull { track.optJSONArray("availableQualities")?.optInt(it) }
-                        .toSet()
-                    val preferredQuality = preferredQuality(context, qualities)
-                    val preferred = if (preferredQuality < 320) "?quality=$preferredQuality" else ""
+                    val qualities = track.optJSONArray("availableQualities")
+                    val available = (0 until (qualities?.length() ?: 0)).mapNotNull { qualities?.optInt(it) }.toSet() + 320
+                    val selected = preferredQuality?.takeIf { it in available }
+                        ?: available.sorted().lastOrNull { it <= 192 } ?: 320
+                    val preferred = if (selected == 320) "" else "?quality=$selected"
                     val cover = if (commercial) null else track.optString("coverUrl").takeIf { it.startsWith("/api/radio/cover/") }
                     add(MediaItem.Builder()
                         .setMediaId("${if (commercial) "commercial" else "song"}:$id")
@@ -80,27 +80,18 @@ internal object RadioCatalog {
         }
     }
 
-    /** Selects a stream that the current network can sustain without buffering. */
-    private fun preferredQuality(context: Context?, available: Set<Int>): Int {
-        val desired = runCatching {
-            val manager = context?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            val network = manager?.activeNetwork
-            val capabilities = network?.let { manager.getNetworkCapabilities(it) }
-            if (capabilities == null || !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return@runCatching 96
-            val downstream = capabilities.linkDownstreamBandwidthKbps
-            when {
-                downstream in 1..1_999 -> 96
-                downstream in 2_000..5_999 -> 192
-                downstream >= 6_000 -> 320
-                else -> 192
-            }
-        }.getOrDefault(192)
+    fun qualityFor(context: Context): Int {
+        val prefs = context.getSharedPreferences("radio", Context.MODE_PRIVATE)
+        val manual = prefs.getInt("quality", 0)
+        if (manual in setOf(96, 192, 320)) return manual
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val caps = manager.getNetworkCapabilities(manager.activeNetwork)
+        val wifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        val down = caps?.linkDownstreamBandwidthKbps ?: 0
         return when {
-            desired <= 96 && 96 in available -> 96
-            desired <= 192 && 192 in available -> 192
-            320 in available -> 320
-            192 in available -> 192
-            else -> 96
+            !wifi && down in 1..1999 -> 96
+            down in 1..5999 -> 192
+            else -> 320
         }
     }
 

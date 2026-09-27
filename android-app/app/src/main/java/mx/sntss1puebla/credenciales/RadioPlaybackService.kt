@@ -363,7 +363,7 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private fun refreshCatalog() {
-        val program = RadioCatalog.loadProgram()
+        val program = RadioCatalog.loadProgram(RadioCatalog.qualityFor(this))
         if (program.songs.isEmpty() && songs.isNotEmpty()) return
         val previousFirst = getSharedPreferences("radio", MODE_PRIVATE).getString("first", null)
         val existing = songs.map { it.mediaId }.toSet()

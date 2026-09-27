@@ -55,4 +55,10 @@ if [[ "$actual" != "$expected" ]]; then
   exit 1
 fi
 
-printf 'APK 0.10.0 compilado, verificado y firmado con el certificado esperado: %s\n' "$apk"
+version_name="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)"
+if [[ -z "$version_name" ]]; then
+  printf 'No fue posible leer versionName de app/build.gradle.kts.\n' >&2
+  exit 1
+fi
+
+printf 'APK %s compilado, verificado y firmado con el certificado esperado: %s\n' "$version_name" "$apk"
