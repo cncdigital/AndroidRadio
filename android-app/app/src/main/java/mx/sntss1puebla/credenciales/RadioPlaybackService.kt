@@ -37,7 +37,7 @@ class RadioPlaybackService : MediaLibraryService() {
     companion object {
         const val ACTION_CLOSE_RADIO = "mx.sntss1puebla.credenciales.action.CLOSE_RADIO"
         const val ACTION_NETWORK_WARNING = "mx.sntss1puebla.credenciales.action.NETWORK_WARNING"
-        private const val RADIO_VOICE_NORMALIZED_VOLUME = 0.72f // 98 dB radio reference
+        private const val RADIO_VOICE_NORMALIZED_VOLUME = 1f // ganancia unitaria; no es una medida acústica
     }
 
     private val catalogExecutor = Executors.newSingleThreadExecutor()
@@ -202,7 +202,7 @@ class RadioPlaybackService : MediaLibraryService() {
                     if (!player.isPlaying) finishAnnouncement()
                     else {
                         announcementStarted = true
-                        player.volume = 0.10f
+                        player.volume = 0.40f
                     }
                 } else if (state == Player.STATE_ENDED) finishAnnouncement()
             }
