@@ -463,7 +463,10 @@ class MainActivity : ComponentActivity() {
             updateFullScreen()
             return
         }
-        if (current == shownLyricLine) return
+        if (current == shownLyricLine) {
+            ghost.text = coloredCurrentLyric()
+            return
+        }
         shownLyricLine = current
         val offsets = timedLyrics.map { it.text.ifBlank { "♪" } }
         val full = offsets.joinToString("\n")
@@ -474,13 +477,30 @@ class MainActivity : ComponentActivity() {
         styled.setSpan(StyleSpan(Typeface.BOLD), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         styled.setSpan(RelativeSizeSpan(1.3f), begin, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         lyricsView.text = styled
-        ghost.text = offsets[current]
+        ghost.text = coloredCurrentLyric()
         currentGhost = offsets[current]
         ghost.visibility = View.VISIBLE
         updateFullScreen()
         lyricsView.post {
             val line = lyricsView.layout?.getLineForOffset(begin) ?: return@post
             lyricsScroll.smoothScrollTo(0, (lyricsView.layout.getLineTop(line) - lyricsScroll.height / 3).coerceAtLeast(0))
+        }
+    }
+
+    private fun coloredCurrentLyric(): CharSequence {
+        val position = browser?.currentPosition ?: 0L
+        val index = timedLyrics.indexOfLast { it.atMs <= position }
+        if (index < 0) return currentGhost.ifBlank { getString(R.string.song_lyrics_empty) }
+        val text = timedLyrics[index].text.ifBlank { "♪" }
+        val end = timedLyrics.getOrNull(index + 1)?.atMs ?: (browser?.duration ?: 0L)
+        // Existing LRC marks time whole lines; this is a visual interpolation, not word recognition.
+        val start = timedLyrics[index].atMs
+        val fraction = if (end > start) ((position - start).toDouble() / (end - start)).coerceIn(0.0, 1.0) else 0.0
+        val points = text.codePointCount(0, text.length)
+        val boundary = text.offsetByCodePoints(0, (points * fraction).toInt())
+        return SpannableString(text).apply {
+            setSpan(ForegroundColorSpan(Color.WHITE), 0, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (boundary > 0) setSpan(ForegroundColorSpan(Color.rgb(255,189,53)), 0, boundary, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
 
@@ -537,7 +557,12 @@ class MainActivity : ComponentActivity() {
         val image = dialog.findViewById<ImageView>(R.id.full_cover)
         if (coverBitmap != null) image.setImageBitmap(coverBitmap)
         else image.setImageResource(R.drawable.ic_radio)
-        dialog.findViewById<TextView>(R.id.full_lyric).text = currentGhost.ifBlank { getString(R.string.song_lyrics_empty) }
+        dialog.findViewById<TextView>(R.id.full_lyric).text = coloredCurrentLyric()
+        val position = browser?.currentPosition?.coerceAtLeast(0) ?: 0L
+        val duration = browser?.duration ?: 0L
+        dialog.findViewById<android.widget.ProgressBar>(R.id.full_progress).progress =
+            if (duration > 0) (position.toDouble() / duration * 1000).toInt().coerceIn(0, 1000) else 0
+        dialog.findViewById<TextView>(R.id.full_time).text = "${formatTime(position)} / ${if (duration > 0) formatTime(duration) else "—:—"}"
         dialog.findViewById<TextView>(R.id.full_title).text = title.text
         dialog.findViewById<TextView>(R.id.full_artist).text = artist.text
         dialog.findViewById<Button>(R.id.full_play).text = playButton.text
