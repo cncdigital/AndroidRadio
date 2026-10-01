@@ -57,6 +57,9 @@ class RadioPlaybackTest {
         for (karaoke in listOf(false, true, false)) {
             val player = onMain {
                 RadioMusicPlayerFactory.create(context, DefaultMediaSourceFactory(context), KaraokeAudioProcessor().apply { enabled = karaoke }, karaoke).apply {
+                    // The instrumentation process is not a foreground music UI on Android 15+.
+                    // Test the actual output pipeline without requesting background audio focus.
+                    setAudioAttributes(audioAttributes, false)
                     volume = 0f
                     setMediaItem(MediaItem.fromUri(Uri.fromFile(wav)))
                     RadioPlaybackActions.resume(this)
