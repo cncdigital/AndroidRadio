@@ -36,6 +36,7 @@ import java.io.File
 class RadioPlaybackService : MediaLibraryService() {
     companion object {
         const val ACTION_CLOSE_RADIO = "mx.sntss1puebla.credenciales.action.CLOSE_RADIO"
+        const val ACTION_UPDATE_TASTES = "mx.sntss1puebla.credenciales.action.UPDATE_TASTES"
         const val ACTION_NETWORK_WARNING = "mx.sntss1puebla.credenciales.action.NETWORK_WARNING"
         private const val RADIO_VOICE_NORMALIZED_VOLUME = 1f // ganancia unitaria; no es una medida acústica
     }
@@ -52,6 +53,7 @@ class RadioPlaybackService : MediaLibraryService() {
     private var commercialIndex = 0
     private var facts: List<RadioCatalog.Fact> = emptyList()
     private var lastFactId: String? = null
+    private var tastesPending = false
     private var pendingFact = false
     private var pendingIntroduction = false
     private var lastMediaId: String? = null
@@ -222,6 +224,7 @@ class RadioPlaybackService : MediaLibraryService() {
             }
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 finishAnnouncement()
+                if (tastesPending && item?.mediaId?.startsWith("song:") == true) mainHandler.post { applyTastes() }
                 val previous = lastMediaId
                 lastMediaId = item?.mediaId
                 if (item?.mediaId?.startsWith("song:") == true && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && previous != item.mediaId) {
@@ -238,7 +241,7 @@ class RadioPlaybackService : MediaLibraryService() {
                 }
                 if (previous?.startsWith("song:") != true || !item.mediaId.startsWith("song:")) return
                 if (songs.size > 1 && previous == songs.last().mediaId && item.mediaId == songs.first().mediaId) {
-                    val next = songs.shuffled().toMutableList()
+                    val next = RadioPreferences.order(this@RadioPlaybackService, songs, previous).toMutableList()
                     if (next.first().mediaId == previous) next.add(0, next.removeAt(1))
                     songs = listOf(item) + next.filter { it.mediaId != item.mediaId }
                     player.replaceMediaItems(player.currentMediaItemIndex + 1, player.mediaItemCount, songs.drop(1))
@@ -284,6 +287,7 @@ class RadioPlaybackService : MediaLibraryService() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_UPDATE_TASTES) applyTastes()
         // Keep the media service eligible for restart if Android reclaims the
         // process while an active playback session is still in use.
         return START_STICKY
@@ -367,11 +371,11 @@ class RadioPlaybackService : MediaLibraryService() {
         if (program.songs.isEmpty() && songs.isNotEmpty()) return
         val previousFirst = getSharedPreferences("radio", MODE_PRIVATE).getString("first", null)
         val existing = songs.map { it.mediaId }.toSet()
-        val ordered = if (existing.isEmpty()) program.songs.shuffled().let { shuffled ->
+        val ordered = if (existing.isEmpty()) RadioPreferences.order(this, program.songs, previousFirst).let { shuffled ->
             if (shuffled.size > 1 && shuffled.first().mediaId == previousFirst)
                 shuffled.toMutableList().apply { add(0, removeAt(1)) } else shuffled
         } else songs.mapNotNull { prior -> program.songs.find { it.mediaId == prior.mediaId } } +
-            program.songs.filter { it.mediaId !in existing }.shuffled()
+            RadioPreferences.order(this, program.songs.filter { it.mediaId !in existing })
         songs = ordered
         if (existing.isEmpty()) ordered.firstOrNull()?.let { getSharedPreferences("radio", MODE_PRIVATE).edit().putString("first", it.mediaId).apply() }
         mainHandler.post {
@@ -385,6 +389,18 @@ class RadioPlaybackService : MediaLibraryService() {
                 player.replaceMediaItems(currentIndex + 1, player.mediaItemCount, tail)
             }
         }
+    }
+
+    private fun applyTastes() {
+        val current = player.currentMediaItem
+        val preferred = RadioPreferences.order(this, songs.filter { it.mediaId != current?.mediaId })
+        if (current?.mediaId?.startsWith("commercial:") == true) {
+            tastesPending = true
+            return
+        }
+        tastesPending = false
+        songs = if (current != null) listOfNotNull(songs.find { it.mediaId == current.mediaId }) + preferred else preferred
+        if (current != null) player.replaceMediaItems(player.currentMediaItemIndex + 1, player.mediaItemCount, preferred)
     }
 
     private fun finishAnnouncement() {

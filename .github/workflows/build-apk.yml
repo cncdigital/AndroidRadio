@@ -56,6 +56,14 @@ jobs:
           OUT=$("$ANDROID_HOME"/build-tools/36.0.0/apksigner verify --print-certs "$APK"); echo "$OUT"
           echo "$OUT" | grep -qi "SHA-256 digest: 89c6a0e71776d62240dd55bdceed9edbe46fe02b7102ae02d6fafae8d0bf642e" || { echo "::error::El APK no tiene la firma permanente"; exit 1; }
 
+      - name: Conservar APK firmado de esta compilación
+        uses: actions/upload-artifact@v4
+        with:
+          name: RadioSindical-0.10.10
+          path: android-app/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Publicar APK en la rama apk
         run: |
           mkdir -p /tmp/apk && cp app/build/outputs/apk/release/app-release.apk /tmp/apk/RadioSindical.apk

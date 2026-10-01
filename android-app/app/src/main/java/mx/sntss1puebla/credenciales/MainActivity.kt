@@ -16,6 +16,10 @@ import android.graphics.BitmapFactory
 import android.graphics.Bitmap
 import android.graphics.drawable.ColorDrawable
 import android.graphics.Typeface
+import android.app.AlertDialog
+import android.widget.CheckBox
+import android.widget.LinearLayout
+import android.widget.Toast
 import android.app.Dialog
 import android.text.SpannableString
 import android.text.Spanned
@@ -135,6 +139,7 @@ class MainActivity : ComponentActivity() {
         ghost = findViewById(R.id.ghost_lyric)
         findViewById<Button>(R.id.close_radio).setOnClickListener { closeRadioApp() }
         findViewById<Button>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
+        findViewById<Button>(R.id.radio_tastes).setOnClickListener { showTastes() }
         findViewById<Button>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
         val qualityLabels = listOf(
             getString(R.string.radio_quality_auto), getString(R.string.radio_quality_96),
@@ -205,6 +210,68 @@ class MainActivity : ComponentActivity() {
             controller.play()
             render()
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun showTastes() {
+        val controller = browser ?: return
+        val future = controller.getChildren(RadioCatalog.SONGS_ID, 0, 2000, null)
+        future.addListener({
+            val songs = runCatching { future.get().value }.getOrNull()
+            if (songs.isNullOrEmpty()) {
+                Toast.makeText(this, "La biblioteca no está disponible. Intenta de nuevo.", Toast.LENGTH_LONG).show()
+                return@addListener
+            }
+            val tastes = RadioPreferences.read(this)
+            val artists = tastes.artists.toMutableSet()
+            val genres = tastes.genres.toMutableSet()
+            val content = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(24, 16, 24, 16)
+            }
+            content.addView(TextView(this).apply {
+                text = "Tus favoritos tendrán prioridad sin excluir otras canciones. Los gustos se guardan en este dispositivo."
+                textSize = 16f
+            })
+            fun choices(title: String, names: List<String>, selected: MutableSet<String>) {
+                content.addView(TextView(this).apply { text = title; textSize = 18f; setPadding(0, 20, 0, 8) })
+                names.filter { it.isNotBlank() && it != "Radio Sindical" }
+                    .distinctBy(RadioPreferences::key).sorted().forEach { name ->
+                        val key = RadioPreferences.key(name)
+                        content.addView(CheckBox(this).apply {
+                            text = name; textSize = 16f; isChecked = key in selected
+                            setOnCheckedChangeListener { _, checked -> if (checked) selected.add(key) else selected.remove(key) }
+                        })
+                    }
+            }
+            choices("Artistas", songs.map { it.mediaMetadata.artist?.toString().orEmpty() }, artists)
+            choices("Géneros", songs.map { it.mediaMetadata.genre?.toString().orEmpty() }, genres)
+            if (songs.none { !it.mediaMetadata.genre.isNullOrBlank() }) content.addView(TextView(this).apply {
+                text = "Prensa puede registrar los géneros en la biblioteca."; textSize = 16f
+            })
+            val scroll = ScrollView(this).apply { addView(content) }
+            val dialog = AlertDialog.Builder(this).setTitle("Mis gustos musicales").setView(scroll)
+                .setPositiveButton("Guardar") { _, _ ->
+                    RadioPreferences.save(this, RadioPreferences.Tastes(artists, genres)); applyTastes()
+                }.setNegativeButton("Cancelar", null).create()
+            content.addView(Button(this).apply {
+                text = "Me gusta de todo"
+                setOnClickListener { RadioPreferences.reset(this@MainActivity); applyTastes(); dialog.dismiss() }
+            })
+            content.addView(Button(this).apply {
+                text = "Reiniciar gustos"
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity).setMessage("¿Reiniciar tus artistas y géneros favoritos?")
+                        .setPositiveButton("Reiniciar") { _, _ -> RadioPreferences.reset(this@MainActivity); applyTastes(); dialog.dismiss() }
+                        .setNegativeButton("Cancelar", null).show()
+                }
+            })
+            dialog.show()
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun applyTastes() {
+        startService(Intent(this, RadioPlaybackService::class.java).setAction(RadioPlaybackService.ACTION_UPDATE_TASTES))
+        Toast.makeText(this, "Gustos guardados. Se aplican a las próximas canciones.", Toast.LENGTH_SHORT).show()
     }
 
     private fun closeRadioApp() {

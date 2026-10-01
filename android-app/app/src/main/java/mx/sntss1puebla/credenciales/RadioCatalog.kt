@@ -55,6 +55,7 @@ internal object RadioCatalog {
                         .setMediaMetadata(MediaMetadata.Builder()
                             .setTitle(if (commercial) "Comercial · $title" else title)
                             .setArtist(track.optString("artist").ifBlank { "Radio Sindical" })
+                            .setGenre(track.optString("genre"))
                             .setAlbumTitle(track.optString("album").ifBlank { "Radio Sindical · SNTSS Sección I Puebla" })
                             .setAlbumArtist("Radio Sindical · SNTSS Sección I Puebla")
                             .setArtworkUri(cover?.let { RadioArtworkProvider.uri(id) }
