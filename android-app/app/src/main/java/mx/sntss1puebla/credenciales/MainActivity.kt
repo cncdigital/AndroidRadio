@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
             karaokeActive = browser?.sessionExtras?.getBoolean("radio.karaoke.active", karaokeActive) ?: karaokeActive
             renderProgress()
             updateFullScreen()
-            handler.postDelayed(this, 750)
+            handler.postDelayed(this, 200)
         }
     }
     private val listener = object : Player.Listener {
@@ -492,15 +492,12 @@ class MainActivity : ComponentActivity() {
         val index = timedLyrics.indexOfLast { it.atMs <= position }
         if (index < 0) return currentGhost.ifBlank { getString(R.string.song_lyrics_empty) }
         val text = timedLyrics[index].text.ifBlank { "♪" }
-        val end = timedLyrics.getOrNull(index + 1)?.atMs ?: (browser?.duration ?: 0L)
-        // Existing LRC marks time whole lines; this is a visual interpolation, not word recognition.
-        val start = timedLyrics[index].atMs
-        val fraction = if (end > start) ((position - start).toDouble() / (end - start)).coerceIn(0.0, 1.0) else 0.0
-        val points = text.codePointCount(0, text.length)
-        val boundary = text.offsetByCodePoints(0, (points * fraction).toInt())
         return SpannableString(text).apply {
             setSpan(ForegroundColorSpan(Color.WHITE), 0, text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            if (boundary > 0) setSpan(ForegroundColorSpan(Color.rgb(255,189,53)), 0, boundary, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            for (word in timedLyrics[index].words) {
+                if (position>=word.startMs && word.from>=0 && word.to<=text.length && word.to>word.from)
+                    setSpan(ForegroundColorSpan(Color.rgb(255,189,53)), word.from, word.to, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
         }
     }
 
