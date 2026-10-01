@@ -151,6 +151,7 @@ class MainActivity : ComponentActivity() {
         ghost = findViewById(R.id.ghost_lyric)
         findViewById<Button>(R.id.close_radio).setOnClickListener { closeRadioApp() }
         findViewById<Button>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
+        findViewById<Button>(R.id.radio_favorite).setOnClickListener { toggleFavorite() }
         findViewById<Button>(R.id.radio_tastes).setOnClickListener { showTastes() }
         findViewById<Button>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
         val qualityLabels = listOf(
@@ -342,7 +343,7 @@ class MainActivity : ComponentActivity() {
             }
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (genreStep) {
-                    RadioPreferences.save(this, RadioPreferences.Tastes(artists, genres)); applyTastes(); dialog.dismiss()
+                    RadioPreferences.save(this, RadioPreferences.Tastes(artists, genres, RadioPreferences.read(this).songs)); applyTastes(); dialog.dismiss()
                 } else {
                     if (page + 1 < pages) page += 1 else genreStep = true
                     renderChoices(); scroll.scrollTo(0, 0)
@@ -352,6 +353,24 @@ class MainActivity : ComponentActivity() {
         }, ContextCompat.getMainExecutor(this))
     }
 
+    private fun toggleFavorite() {
+        val id = browser?.currentMediaItem?.mediaId ?: return
+        if (!id.startsWith("song:")) return
+        RadioPreferences.toggleSong(this,id)
+        startService(Intent(this,RadioPlaybackService::class.java).setAction(RadioPlaybackService.ACTION_UPDATE_TASTES))
+        updateFavoriteButtons()
+    }
+    private fun updateFavoriteButtons() {
+        val id = browser?.currentMediaItem?.mediaId.orEmpty()
+        val selected = RadioPreferences.isFavorite(this,id)
+        listOfNotNull(findViewById<Button>(R.id.radio_favorite),fullScreen?.findViewById<Button>(R.id.full_favorite)).forEach {
+            it.text = if (selected) "♥ Favorita" else "♡ Favorito"
+            it.contentDescription = if (selected) "Quitar canción de favoritos" else "Guardar canción favorita"
+            it.isEnabled = id.startsWith("song:")
+            it.isSelected = selected
+            it.setTextColor(if (selected) Color.rgb(173,23,70) else Color.rgb(7,29,54))
+        }
+    }
     private fun applyTastes() {
         startService(Intent(this, RadioPlaybackService::class.java).setAction(RadioPlaybackService.ACTION_UPDATE_TASTES))
         Toast.makeText(this, "Gustos guardados. Se aplican a las próximas canciones.", Toast.LENGTH_SHORT).show()
@@ -365,6 +384,7 @@ class MainActivity : ComponentActivity() {
 
     private fun render() {
         val player = browser
+        updateFavoriteButtons()
         val item = player?.currentMediaItem
         title.text = item?.mediaMetadata?.title ?: getString(R.string.radio_title)
         artist.text = item?.mediaMetadata?.artist ?: getString(R.string.radio_subtitle)
@@ -522,6 +542,7 @@ class MainActivity : ComponentActivity() {
             insets
         }
         dialog.setOnDismissListener { setKaraoke(false); if (fullScreen === dialog) fullScreen = null }
+        dialog.findViewById<Button>(R.id.full_favorite).setOnClickListener { toggleFavorite() }
         dialog.findViewById<Button>(R.id.full_karaoke).setOnClickListener { setKaraoke(!karaokeActive) }
         dialog.findViewById<Button>(R.id.full_close).setOnClickListener { dialog.dismiss() }
         val fullLyric = dialog.findViewById<TextView>(R.id.full_lyric)
@@ -540,6 +561,7 @@ class MainActivity : ComponentActivity() {
         dialog.window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
         ViewCompat.requestApplyInsets(fullRoot)
         updateFullScreen()
+        updateFavoriteButtons()
     }
 
     private fun setKaraoke(enabled: Boolean) {
