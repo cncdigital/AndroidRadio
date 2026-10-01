@@ -116,6 +116,7 @@ class MainActivity : ComponentActivity() {
         override fun run() {
             karaokeActive = browser?.sessionExtras?.getBoolean("radio.karaoke.active", karaokeActive) ?: karaokeActive
             renderProgress()
+            updateFullScreen()
             handler.postDelayed(this, 750)
         }
     }
@@ -442,7 +443,15 @@ class MainActivity : ComponentActivity() {
         if (timedLyrics.isEmpty()) return
         val position = browser?.currentPosition ?: return
         val current = timedLyrics.indexOfLast { it.atMs <= position }
-        if (current == shownLyricLine || current < 0) return
+        if (current < 0) {
+            shownLyricLine = -1
+            currentGhost = "La letra comienza enseguida"
+            ghost.visibility = View.GONE
+            lyricsView.text = timedLyrics.joinToString("\n") { it.text.ifBlank { "♪" } }
+            updateFullScreen()
+            return
+        }
+        if (current == shownLyricLine) return
         shownLyricLine = current
         val offsets = timedLyrics.map { it.text.ifBlank { "♪" } }
         val full = offsets.joinToString("\n")
