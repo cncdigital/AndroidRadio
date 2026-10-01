@@ -19,7 +19,7 @@ internal object RadioLyrics {
 
     fun fetch(id: Int): String {
         require(id > 0)
-        val connection = (URL("${RadioCatalog.ORIGIN}/api/radio/lyrics/$id").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("${RadioCatalog.ORIGIN}/api/radio/lyrics/$id?words=1").openConnection() as HttpURLConnection).apply {
             connectTimeout = 5_000
             readTimeout = 7_000
             instanceFollowRedirects = false
