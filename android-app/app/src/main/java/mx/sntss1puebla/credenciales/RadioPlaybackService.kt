@@ -2,6 +2,14 @@ package mx.sntss1puebla.credenciales
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.Context
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import android.os.Bundle
+import androidx.media3.session.CommandButton
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import android.os.Handler
 import android.os.Looper
 import android.net.Uri
@@ -35,6 +43,7 @@ import java.io.File
 /** Exposes the authorized portal library to Android Auto's driver-safe media UI. */
 class RadioPlaybackService : MediaLibraryService() {
     companion object {
+        const val ACTION_SET_KARAOKE = "mx.sntss1puebla.credenciales.action.SET_KARAOKE"
         const val ACTION_CLOSE_RADIO = "mx.sntss1puebla.credenciales.action.CLOSE_RADIO"
         const val ACTION_UPDATE_TASTES = "mx.sntss1puebla.credenciales.action.UPDATE_TASTES"
         const val ACTION_NETWORK_WARNING = "mx.sntss1puebla.credenciales.action.NETWORK_WARNING"
@@ -44,6 +53,8 @@ class RadioPlaybackService : MediaLibraryService() {
     private val catalogExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var voicePlayer: ExoPlayer
+    private val karaokeProcessor = KaraokeAudioProcessor()
+    private var karaokeActive = false
     private var announcementStarted = false
     private var completedSongs = 0
     private var elapsedMusicMs = 0L
@@ -89,7 +100,39 @@ class RadioPlaybackService : MediaLibraryService() {
     private lateinit var player: ExoPlayer
     private lateinit var librarySession: MediaLibrarySession
 
+    private val karaokeCommand = SessionCommand("radio.karaoke.toggle", Bundle.EMPTY)
+    private fun karaokeButton() = CommandButton.Builder(CommandButton.ICON_SETTINGS)
+        .setDisplayName(if (karaokeActive) "Apagar karaoke" else "Karaoke · reducir voz")
+        .setSessionCommand(karaokeCommand)
+        .setSlots(CommandButton.SLOT_OVERFLOW)
+        .build()
+
+    private fun setKaraoke(enabled: Boolean) {
+        karaokeActive = enabled
+        karaokeProcessor.enabled = enabled && player.currentMediaItem?.mediaId?.startsWith("song:") == true
+        if (enabled) finishAnnouncement()
+        if (::librarySession.isInitialized) {
+            librarySession.setSessionExtras(Bundle().apply { putBoolean("radio.karaoke.active", enabled) })
+            librarySession.connectedControllers.filter { librarySession.isAutoCompanionController(it) || librarySession.isAutomotiveController(it) }
+                .forEach { librarySession.setMediaButtonPreferences(it, listOf(karaokeButton())) }
+        }
+    }
+
     private val callback = object : MediaLibrarySession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            if (!controller.isTrusted) return super.onConnect(session, controller)
+            val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(karaokeCommand).build())
+            if (session.isAutoCompanionController(controller) || session.isAutomotiveController(controller))
+                result.setMediaButtonPreferences(listOf(karaokeButton()))
+            return result.build()
+        }
+        override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+            if (command.customAction != karaokeCommand.customAction) return super.onCustomCommand(session, controller, command, args)
+            setKaraoke(!karaokeActive)
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+
         override fun onGetLibraryRoot(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
@@ -177,7 +220,14 @@ class RadioPlaybackService : MediaLibraryService() {
             .setCache(audioCache)
             .setUpstreamDataSourceFactory(upstreamFactory)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        player = ExoPlayer.Builder(this)
+        val renderers = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean): AudioSink =
+                DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(false)
+                    .setAudioProcessors(arrayOf(karaokeProcessor))
+                    .build()
+        }
+        player = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory))
             .build().apply {
                 setAudioAttributes(AudioAttributes.Builder()
@@ -223,6 +273,7 @@ class RadioPlaybackService : MediaLibraryService() {
                 }
             }
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                karaokeProcessor.enabled = karaokeActive && item?.mediaId?.startsWith("song:") == true
                 finishAnnouncement()
                 if (tastesPending && item?.mediaId?.startsWith("song:") == true) mainHandler.post { applyTastes() }
                 val previous = lastMediaId
@@ -288,6 +339,9 @@ class RadioPlaybackService : MediaLibraryService() {
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_UPDATE_TASTES) applyTastes()
+        if (intent?.action == ACTION_SET_KARAOKE) {
+            setKaraoke(intent.getBooleanExtra("enabled", false))
+        }
         // Keep the media service eligible for restart if Android reclaims the
         // process while an active playback session is still in use.
         return START_STICKY
@@ -317,6 +371,7 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private fun announceIfDue(item: MediaItem) {
+        if (karaokeActive) { pendingIntroduction = false; pendingFact = false; return }
         if (!player.playWhenReady || (!pendingIntroduction && !pendingFact)) return
         val trackId = item.mediaId.removePrefix("song:").toIntOrNull() ?: return
         pendingIntroduction = false

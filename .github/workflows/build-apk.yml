@@ -47,7 +47,7 @@ jobs:
           RADIO_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           RADIO_SIGNING_KEY_ALIAS: radiosindical
           RADIO_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: gradle testReleaseUnitTest assembleRelease --no-daemon --stacktrace
 
       - name: Verificar firma
         run: |
@@ -59,7 +59,7 @@ jobs:
       - name: Conservar APK firmado de esta compilación
         uses: actions/upload-artifact@v4
         with:
-          name: RadioSindical-0.10.11
+          name: RadioSindical-0.10.12
           path: android-app/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30

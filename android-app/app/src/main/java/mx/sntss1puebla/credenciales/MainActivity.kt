@@ -54,6 +54,7 @@ import java.util.concurrent.Executors
 class MainActivity : ComponentActivity() {
     private lateinit var browserFuture: ListenableFuture<MediaBrowser>
     private var browser: MediaBrowser? = null
+    private var karaokeActive = false
     private var playWhenConnected = false
     private lateinit var title: TextView
     private lateinit var artist: TextView
@@ -113,6 +114,7 @@ class MainActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() {
+            karaokeActive = browser?.sessionExtras?.getBoolean("radio.karaoke.active", karaokeActive) ?: karaokeActive
             renderProgress()
             handler.postDelayed(this, 750)
         }
@@ -481,7 +483,8 @@ class MainActivity : ComponentActivity() {
             view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
             insets
         }
-        dialog.setOnDismissListener { if (fullScreen === dialog) fullScreen = null }
+        dialog.setOnDismissListener { setKaraoke(false); if (fullScreen === dialog) fullScreen = null }
+        dialog.findViewById<Button>(R.id.full_karaoke).setOnClickListener { setKaraoke(!karaokeActive) }
         dialog.findViewById<Button>(R.id.full_close).setOnClickListener { dialog.dismiss() }
         val fullLyric = dialog.findViewById<TextView>(R.id.full_lyric)
         val dragLyric = floatingLyricDragListener(fullRoot, fullLyric)
@@ -501,6 +504,13 @@ class MainActivity : ComponentActivity() {
         updateFullScreen()
     }
 
+    private fun setKaraoke(enabled: Boolean) {
+        karaokeActive = enabled
+        startService(Intent(this, RadioPlaybackService::class.java)
+            .setAction(RadioPlaybackService.ACTION_SET_KARAOKE).putExtra("enabled", enabled))
+        updateFullScreen()
+    }
+
     private fun updateFullScreen() {
         val dialog = fullScreen?.takeIf { it.isShowing } ?: return
         val image = dialog.findViewById<ImageView>(R.id.full_cover)
@@ -510,6 +520,8 @@ class MainActivity : ComponentActivity() {
         dialog.findViewById<TextView>(R.id.full_title).text = title.text
         dialog.findViewById<TextView>(R.id.full_artist).text = artist.text
         dialog.findViewById<Button>(R.id.full_play).text = playButton.text
+        dialog.findViewById<Button>(R.id.full_karaoke).text = if (karaokeActive) "Apagar karaoke" else "Karaoke · reducir voz"
+        dialog.findViewById<Button>(R.id.full_karaoke).isSelected = karaokeActive
     }
 
     override fun onDestroy() {
