@@ -12,7 +12,7 @@ Desde 0.10.1, DeVi utiliza locuciones MP3 de voz natural del portal para present
 
 ## Actualizar una instalación anterior
 
-Se conserva el paquete `mx.sntss1puebla.credenciales`; la compilación publicada es 0.10.12 (`versionCode` 22). Para actualizar una instalación existente **se necesita la misma clave y certificado con que fue firmado el APK instalado**. No cambies el `applicationId` ni firmes con otra clave. La detección de instalación en Chrome requiere un APK con `asset_statements` y un navegador que admita `getInstalledRelatedApps`.
+Se conserva el paquete `mx.sntss1puebla.credenciales`; la compilación publicada es 0.10.13 (`versionCode` 23). Para actualizar una instalación existente **se necesita la misma clave y certificado con que fue firmado el APK instalado**. No cambies el `applicationId` ni firmes con otra clave. La detección de instalación en Chrome requiere un APK con `asset_statements` y un navegador que admita `getInstalledRelatedApps`.
 
 Mantén el bloque `signingConfigs` de `app/build.gradle.kts` en los siguientes paquetes. Para firmar `release`, proporciona `RADIO_SIGNING_STORE_FILE`, `RADIO_SIGNING_STORE_PASSWORD`, `RADIO_SIGNING_KEY_ALIAS` y `RADIO_SIGNING_KEY_PASSWORD` en el entorno privado de compilación. No agregues la clave, contraseñas ni certificados privados al repositorio. Si faltan esas variables, la configuración `release` no lleva firma: no distribuyas ese APK como actualización.
 
@@ -24,7 +24,7 @@ Abre **esta carpeta `android-app`** como proyecto en Android Studio, instala JDK
 
 Para generar una actualización compatible con el APK 0.5.0, consigue **el almacén y la clave privados originales**; conocer la huella pública no basta para firmar. Configura localmente `RADIO_SIGNING_STORE_FILE` (ruta absoluta), `RADIO_SIGNING_STORE_PASSWORD`, `RADIO_SIGNING_KEY_ALIAS` y `RADIO_SIGNING_KEY_PASSWORD` sin agregarlos al proyecto. En macOS/Linux ejecuta `bash build-radio-release.sh` desde esta carpeta. El script compila `:app:assembleRelease`, verifica la firma del APK con `apksigner` y detiene la entrega si el certificado no coincide con el APK 0.5.0. El resultado queda en `app/build/outputs/apk/release/app-release.apk`. En Windows, configura las mismas variables privadas en Android Studio, compila `assembleRelease` y comprueba con `apksigner verify --verbose --print-certs` la huella indicada arriba.
 
-Comprueba reproducción y los controles de la portada maximizada en un teléfono con navegación por gestos y con botones; prueba el emulador Android Auto y escucha la locución con música activa. El código no incluye MP3, credenciales ni datos de personas. El portal ofrece 0.10.12; verifica la firma antes de reemplazar el APK publicado.
+Comprueba reproducción y los controles de la portada maximizada en un teléfono con navegación por gestos y con botones; prueba el emulador Android Auto y escucha la locución con música activa. El código no incluye MP3, credenciales ni datos de personas. El portal ofrece 0.10.13; verifica la firma antes de reemplazar el APK publicado.
 
 ## Gustos musicales (0.10.11)
 
@@ -39,3 +39,7 @@ La portada maximizada incluye el botón Karaoke. Reduce el centro de la mezcla e
 Prensa y Administración pueden usar **Sincronizar letra con IA** en la ficha de edición del portal. La IA escucha el MP3 y alinea la letra autorizada completa con los tiempos reconocidos; se rechazan coincidencias insuficientes. Los tiempos son una propuesta: se revisan y guardan antes de publicarlos. La app utiliza la letra LRC guardada y la posición real del reproductor, incluso después de pausar o adelantar.
 
 Se ofrece a Android Auto un control Karaoke en las acciones adicionales (overflow) de reproducción. Su ubicación y visibilidad las decide el automóvil; no existe una señal pública que permita limitarlo exclusivamente a una pantalla “maximizada” del host. El teléfono sí limita su botón al diálogo maximizado. El estado se comparte con la sesión y el audio reducido se transmite a los altavoces del coche.
+
+## Recuperación de reproducción (0.10.13)
+
+Con karaoke apagado se usa el renderer y salida de audio estándar de ExoPlayer. El procesador de karaoke se instala sólo al activar el modo; al cambiar se conserva canción, posición, cola y pausa/reproducción. Si el efecto falla, se restaura el reproductor normal una sola vez. El botón Reproducir vuelve a preparar un reproductor detenido por error y permite reintentar sin cerrar la app. Los errores muestran su código para poder distinguir red, decodificación y salida de audio.

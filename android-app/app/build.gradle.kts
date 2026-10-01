@@ -12,8 +12,9 @@ android {
         applicationId = "mx.sntss1puebla.credenciales"
         minSdk = 26
         targetSdk = 36
-        versionCode = 22
-        versionName = "0.10.12"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 23
+        versionName = "0.10.13"
     }
 
     // Keep this block in every packaged version: an update must use the installed APK's signing key.
@@ -58,6 +59,8 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
     implementation("androidx.activity:activity-ktx:1.12.3")
     implementation("androidx.core:core-ktx:1.18.0")
     implementation("androidx.media3:media3-exoplayer:1.11.0")

@@ -2,10 +2,6 @@ package mx.sntss1puebla.credenciales
 
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.Context
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.exoplayer.audio.DefaultAudioSink
 import android.os.Bundle
 import androidx.media3.session.CommandButton
 import androidx.media3.session.SessionCommand
@@ -99,6 +95,7 @@ class RadioPlaybackService : MediaLibraryService() {
     private lateinit var cacheFactory: CacheDataSource.Factory
     private lateinit var player: ExoPlayer
     private lateinit var librarySession: MediaLibrarySession
+    private lateinit var musicListener: Player.Listener
 
     private val karaokeCommand = SessionCommand("radio.karaoke.toggle", Bundle.EMPTY)
     private fun karaokeButton() = CommandButton.Builder(CommandButton.ICON_SETTINGS)
@@ -108,8 +105,10 @@ class RadioPlaybackService : MediaLibraryService() {
         .build()
 
     private fun setKaraoke(enabled: Boolean) {
+        val changed = karaokeActive != enabled
         karaokeActive = enabled
         karaokeProcessor.enabled = enabled && player.currentMediaItem?.mediaId?.startsWith("song:") == true
+        if (changed && ::librarySession.isInitialized) rebuildMusicPlayer(enabled)
         if (enabled) finishAnnouncement()
         if (::librarySession.isInitialized) {
             librarySession.setSessionExtras(Bundle().apply { putBoolean("radio.karaoke.active", enabled) })
@@ -220,24 +219,7 @@ class RadioPlaybackService : MediaLibraryService() {
             .setCache(audioCache)
             .setUpstreamDataSourceFactory(upstreamFactory)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        val renderers = object : DefaultRenderersFactory(this) {
-            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean): AudioSink =
-                DefaultAudioSink.Builder(context)
-                    .setEnableFloatOutput(false)
-                    .setAudioProcessors(arrayOf(karaokeProcessor))
-                    .build()
-        }
-        player = ExoPlayer.Builder(this, renderers)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory))
-            .build().apply {
-                setAudioAttributes(AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(), true)
-                setHandleAudioBecomingNoisy(true)
-                setWakeMode(C.WAKE_MODE_NETWORK)
-                repeatMode = Player.REPEAT_MODE_ALL
-            }
+        player = createMusicPlayer(false)
         voicePlayer = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory))
             .build().apply {
@@ -260,9 +242,19 @@ class RadioPlaybackService : MediaLibraryService() {
             }
             override fun onPlayerError(error: PlaybackException) = finishAnnouncement()
         })
-        player.addListener(object : Player.Listener {
+        musicListener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                announceConnectionWarning()
+                finishAnnouncement()
+                if (karaokeActive) {
+                    mainHandler.post {
+                        if (karaokeActive) {
+                            setKaraoke(false)
+                            sendPlaybackWarning("Se restauró el audio normal porque el efecto karaoke falló. ${error.errorCodeName}")
+                        }
+                    }
+                    return
+                }
+                sendPlaybackWarning("No se pudo reproducir. Pulsa Reproducir para reintentar. ${error.errorCodeName}")
                 val index = player.currentMediaItemIndex
                 if (player.currentMediaItem?.mediaId?.startsWith("commercial:") == true && index >= 0) {
                     player.removeMediaItem(index)
@@ -321,7 +313,8 @@ class RadioPlaybackService : MediaLibraryService() {
                 if (!isPlaying) finishAnnouncement()
                 if (isPlaying) player.currentMediaItem?.takeIf { it.mediaId.startsWith("song:") }?.let { announceIfDue(it) }
             }
-        })
+        }
+        player.addListener(musicListener)
         mainHandler.post(positionRefresh)
         mainHandler.postDelayed(catalogRefresh, 60_000)
         mainHandler.postDelayed(networkProbe, 30_000)
@@ -330,6 +323,34 @@ class RadioPlaybackService : MediaLibraryService() {
         librarySession = MediaLibrarySession.Builder(this, player, callback)
             .setSessionActivity(openApp)
             .build()
+    }
+
+    private fun createMusicPlayer(withKaraoke: Boolean): ExoPlayer = RadioMusicPlayerFactory.create(
+        this, DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory), karaokeProcessor, withKaraoke,
+    )
+
+    /** Switch renderers only when karaoke changes. Normal listening uses ExoPlayer's default sink. */
+    private fun rebuildMusicPlayer(withKaraoke: Boolean) {
+        finishAnnouncement()
+        val old = player
+        val queue = (0 until old.mediaItemCount).map { old.getMediaItemAt(it) }
+        val index = old.currentMediaItemIndex.coerceAtLeast(0)
+        val position = old.currentPosition.coerceAtLeast(0)
+        val resume = old.playWhenReady
+        old.removeListener(musicListener)
+        player = createMusicPlayer(withKaraoke)
+        player.addListener(musicListener)
+        librarySession.setPlayer(player)
+        old.release()
+        if (queue.isNotEmpty()) {
+            player.setMediaItems(queue, index.coerceAtMost(queue.lastIndex), position)
+            player.prepare()
+            player.playWhenReady = resume
+        }
+    }
+
+    private fun sendPlaybackWarning(message: String) {
+        sendBroadcast(Intent(ACTION_NETWORK_WARNING).setPackage(packageName).putExtra("message", message))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

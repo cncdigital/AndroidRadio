@@ -28,6 +28,24 @@ class KaraokeAudioProcessorTest {
         processor.enabled = false
         assertEquals(listOf(1234, -9876), process(processor, 1234, -9876))
     }
+    @Test fun disabledEffectPreservesRawBytesAcrossChunksAndEmptyInput() {
+        val processor = KaraokeAudioProcessor()
+        processor.configure(AudioProcessor.AudioFormat(44100, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        val original = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
+        repeat(3) {
+            val input = ByteBuffer.allocateDirect(original.size).order(ByteOrder.BIG_ENDIAN)
+            input.put(original).flip()
+            processor.queueInput(input)
+            val actual = ByteArray(original.size)
+            processor.output.get(actual)
+            assertArrayEquals(original, actual)
+            processor.queueInput(ByteBuffer.allocateDirect(0))
+            assertFalse(processor.output.hasRemaining())
+        }
+        processor.queueEndOfStream()
+        assertTrue(processor.isEnded)
+    }
     @Test fun monoIsBypassedRatherThanSilenced() {
         val processor = KaraokeAudioProcessor()
         processor.enabled = true

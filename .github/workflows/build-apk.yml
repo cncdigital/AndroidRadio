@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: android-app
@@ -41,6 +42,18 @@ jobs:
         with:
           gradle-version: "8.14.3"
 
+      - name: Habilitar aceleración del emulador
+        run: sudo chmod 666 /dev/kvm
+
+      - name: Probar reproducción real en Android
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: cd "$GITHUB_WORKSPACE/android-app" && gradle connectedDebugAndroidTest --no-daemon --stacktrace
+
       - name: Compilar APK firmado
         env:
           RADIO_SIGNING_STORE_FILE: ${{ runner.temp }}/radiosindical.jks
@@ -59,7 +72,7 @@ jobs:
       - name: Conservar APK firmado de esta compilación
         uses: actions/upload-artifact@v4
         with:
-          name: RadioSindical-0.10.12
+          name: RadioSindical-0.10.13
           path: android-app/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30

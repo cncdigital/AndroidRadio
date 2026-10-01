@@ -4,6 +4,7 @@ import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /** Stereo centre reduction on decoded PCM. The original file and voice/commercial audio stay intact. */
 class KaraokeAudioProcessor : BaseAudioProcessor() {
@@ -13,7 +14,15 @@ class KaraokeAudioProcessor : BaseAudioProcessor() {
         else AudioProcessor.AudioFormat.NOT_SET
 
     override fun queueInput(input: ByteBuffer) {
+        if (!input.hasRemaining()) return
         val output = replaceOutputBuffer(input.remaining())
+        if (!enabled) {
+            output.put(input)
+            output.flip()
+            return
+        }
+        input.order(ByteOrder.nativeOrder())
+        output.order(ByteOrder.nativeOrder())
         val reduce = enabled
         while (input.remaining() >= 4) {
             val left = input.short.toInt()

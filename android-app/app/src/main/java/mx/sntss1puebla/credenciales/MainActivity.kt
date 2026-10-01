@@ -122,6 +122,13 @@ class MainActivity : ComponentActivity() {
     }
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = render()
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            networkWarning.text = "No se pudo reproducir. Pulsa Reproducir para reintentar. ${error.errorCodeName}"
+            networkWarning.visibility = View.VISIBLE
+        }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) networkWarning.visibility = View.GONE
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -166,7 +173,7 @@ class MainActivity : ComponentActivity() {
         playButton.setOnClickListener {
             val player = browser
             if (player == null || player.mediaItemCount == 0) startRadio()
-            else if (player.isPlaying) player.pause() else player.play()
+            else if (player.isPlaying) player.pause() else resumePlayback(player)
         }
         previousButton.setOnClickListener { browser?.seekToPreviousMediaItem() }
         nextButton.setOnClickListener { browser?.seekToNextMediaItem() }
@@ -192,6 +199,11 @@ class MainActivity : ComponentActivity() {
             }
         }, ContextCompat.getMainExecutor(this))
         handler.post(tick)
+    }
+
+    private fun resumePlayback(player: MediaBrowser) {
+        networkWarning.visibility = View.GONE
+        RadioPlaybackActions.resume(player)
     }
 
     private fun startRadio() {
@@ -504,7 +516,7 @@ class MainActivity : ComponentActivity() {
         dialog.findViewById<Button>(R.id.full_play).setOnClickListener {
             val player = browser
             if (player == null || player.mediaItemCount == 0) startRadio()
-            else if (player.isPlaying) player.pause() else player.play()
+            else if (player.isPlaying) player.pause() else resumePlayback(player)
         }
         fullScreen = dialog
         dialog.show()
