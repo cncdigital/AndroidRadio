@@ -38,7 +38,8 @@ internal object RadioLyrics {
                 if (result.length > 300_000) return ""
                 result.toString()
             }
-            JSONObject(body).optString("lyrics").take(48_000)
+            val data = JSONObject(body)
+            data.optString("wordLyrics").ifBlank { data.optString("lyrics") }.take(48_000)
         } finally {
             connection.disconnect()
         }
