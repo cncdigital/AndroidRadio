@@ -12,7 +12,7 @@ Desde 0.10.1, DeVi utiliza locuciones MP3 de voz natural del portal para present
 
 ## Actualizar una instalación anterior
 
-Se conserva el paquete `mx.sntss1puebla.credenciales`; la compilación publicada es 0.10.10 (`versionCode` 20). Para actualizar una instalación existente **se necesita la misma clave y certificado con que fue firmado el APK instalado**. No cambies el `applicationId` ni firmes con otra clave. La detección de instalación en Chrome requiere un APK con `asset_statements` y un navegador que admita `getInstalledRelatedApps`.
+Se conserva el paquete `mx.sntss1puebla.credenciales`; la compilación publicada es 0.10.11 (`versionCode` 21). Para actualizar una instalación existente **se necesita la misma clave y certificado con que fue firmado el APK instalado**. No cambies el `applicationId` ni firmes con otra clave. La detección de instalación en Chrome requiere un APK con `asset_statements` y un navegador que admita `getInstalledRelatedApps`.
 
 Mantén el bloque `signingConfigs` de `app/build.gradle.kts` en los siguientes paquetes. Para firmar `release`, proporciona `RADIO_SIGNING_STORE_FILE`, `RADIO_SIGNING_STORE_PASSWORD`, `RADIO_SIGNING_KEY_ALIAS` y `RADIO_SIGNING_KEY_PASSWORD` en el entorno privado de compilación. No agregues la clave, contraseñas ni certificados privados al repositorio. Si faltan esas variables, la configuración `release` no lleva firma: no distribuyas ese APK como actualización.
 
@@ -24,8 +24,10 @@ Abre **esta carpeta `android-app`** como proyecto en Android Studio, instala JDK
 
 Para generar una actualización compatible con el APK 0.5.0, consigue **el almacén y la clave privados originales**; conocer la huella pública no basta para firmar. Configura localmente `RADIO_SIGNING_STORE_FILE` (ruta absoluta), `RADIO_SIGNING_STORE_PASSWORD`, `RADIO_SIGNING_KEY_ALIAS` y `RADIO_SIGNING_KEY_PASSWORD` sin agregarlos al proyecto. En macOS/Linux ejecuta `bash build-radio-release.sh` desde esta carpeta. El script compila `:app:assembleRelease`, verifica la firma del APK con `apksigner` y detiene la entrega si el certificado no coincide con el APK 0.5.0. El resultado queda en `app/build/outputs/apk/release/app-release.apk`. En Windows, configura las mismas variables privadas en Android Studio, compila `assembleRelease` y comprueba con `apksigner verify --verbose --print-certs` la huella indicada arriba.
 
-Comprueba reproducción y los controles de la portada maximizada en un teléfono con navegación por gestos y con botones; prueba el emulador Android Auto y escucha la locución con música activa. El código no incluye MP3, credenciales ni datos de personas. El portal ofrece 0.10.10; verifica la firma antes de reemplazar el APK publicado.
+Comprueba reproducción y los controles de la portada maximizada en un teléfono con navegación por gestos y con botones; prueba el emulador Android Auto y escucha la locución con música activa. El código no incluye MP3, credenciales ni datos de personas. El portal ofrece 0.10.11; verifica la firma antes de reemplazar el APK publicado.
 
-## Gustos musicales (0.10.10)
+## Gustos musicales (0.10.11)
 
 El botón Mis gustos musicales permite elegir artistas y géneros presentes en el catálogo. Se guardan sólo en el dispositivo. La cola aleatoria da mayor prioridad a los favoritos sin excluir otros temas ni cortar la canción actual; cada vuelta conserva todas las canciones sin duplicarlas. Me gusta de todo y Reiniciar gustos borran ambas selecciones. Android Auto usa la misma cola del teléfono. GitHub Actions compila esta versión con la firma permanente del repositorio y verifica el certificado antes de publicar. Las versiones anteriores requieren instalar esta actualización para usar los gustos musicales.
+
+La selección de gustos se presenta en tarjetas con las portadas disponibles, seis artistas por pantalla, botones Anterior y Siguiente, y un paso final de géneros. Las selecciones se conservan al avanzar y sólo se guardan al finalizar.

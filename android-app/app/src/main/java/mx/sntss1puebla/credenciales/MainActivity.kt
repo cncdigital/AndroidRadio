@@ -15,6 +15,7 @@ import android.graphics.Color
 import android.graphics.BitmapFactory
 import android.graphics.Bitmap
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Typeface
 import android.app.AlertDialog
 import android.widget.CheckBox
@@ -73,6 +74,7 @@ class MainActivity : ComponentActivity() {
     private var coverBitmap: Bitmap? = null
     private var currentGhost = ""
     private val lyricExecutor = Executors.newSingleThreadExecutor()
+    private val tasteArtworkExecutor = Executors.newFixedThreadPool(2)
     private var currentLyricSongId = -1
     private var timedLyrics: List<TimedLyric> = emptyList()
     private var shownLyricLine = -1
@@ -224,48 +226,114 @@ class MainActivity : ComponentActivity() {
             val tastes = RadioPreferences.read(this)
             val artists = tastes.artists.toMutableSet()
             val genres = tastes.genres.toMutableSet()
+            val options = songs.filter { !it.mediaMetadata.artist.isNullOrBlank() && it.mediaMetadata.artist.toString() != "Radio Sindical" }
+                .groupBy { RadioPreferences.key(it.mediaMetadata.artist.toString()) }
+                .entries.sortedBy { it.value.first().mediaMetadata.artist.toString() }
+            val genreNames = songs.map { it.mediaMetadata.genre?.toString().orEmpty() }.filter { it.isNotBlank() }
+                .distinctBy(RadioPreferences::key).sorted()
+            val pages = maxOf(1, (options.size + 5) / 6)
+            var page = 0
+            var genreStep = false
+            var generation = 0
             val content = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(24, 16, 24, 16)
+                setPadding(20, 12, 20, 12)
             }
-            content.addView(TextView(this).apply {
-                text = "Tus favoritos tendrán prioridad sin excluir otras canciones. Los gustos se guardan en este dispositivo."
-                textSize = 16f
-            })
-            fun choices(title: String, names: List<String>, selected: MutableSet<String>) {
-                content.addView(TextView(this).apply { text = title; textSize = 18f; setPadding(0, 20, 0, 8) })
-                names.filter { it.isNotBlank() && it != "Radio Sindical" }
-                    .distinctBy(RadioPreferences::key).sorted().forEach { name ->
-                        val key = RadioPreferences.key(name)
-                        content.addView(CheckBox(this).apply {
-                            text = name; textSize = 16f; isChecked = key in selected
-                            setOnCheckedChangeListener { _, checked -> if (checked) selected.add(key) else selected.remove(key) }
-                        })
-                    }
-            }
-            choices("Artistas", songs.map { it.mediaMetadata.artist?.toString().orEmpty() }, artists)
-            choices("Géneros", songs.map { it.mediaMetadata.genre?.toString().orEmpty() }, genres)
-            if (songs.none { !it.mediaMetadata.genre.isNullOrBlank() }) content.addView(TextView(this).apply {
-                text = "Prensa puede registrar los géneros en la biblioteca."; textSize = 16f
-            })
             val scroll = ScrollView(this).apply { addView(content) }
             val dialog = AlertDialog.Builder(this).setTitle("Mis gustos musicales").setView(scroll)
-                .setPositiveButton("Guardar") { _, _ ->
-                    RadioPreferences.save(this, RadioPreferences.Tastes(artists, genres)); applyTastes()
-                }.setNegativeButton("Cancelar", null).create()
-            content.addView(Button(this).apply {
-                text = "Me gusta de todo"
-                setOnClickListener { RadioPreferences.reset(this@MainActivity); applyTastes(); dialog.dismiss() }
-            })
-            content.addView(Button(this).apply {
-                text = "Reiniciar gustos"
-                setOnClickListener {
-                    AlertDialog.Builder(this@MainActivity).setMessage("¿Reiniciar tus artistas y géneros favoritos?")
-                        .setPositiveButton("Reiniciar") { _, _ -> RadioPreferences.reset(this@MainActivity); applyTastes(); dialog.dismiss() }
-                        .setNegativeButton("Cancelar", null).show()
+                .setPositiveButton("Siguiente", null).setNeutralButton("Anterior", null)
+                .setNegativeButton("Cancelar", null).create()
+            fun renderChoices() {
+                generation += 1
+                val activeGeneration = generation
+                content.removeAllViews()
+                content.addView(TextView(this).apply {
+                    text = if (genreStep) "Último paso: géneros musicales" else "Artistas: pantalla ${page + 1} de $pages"
+                    textSize = 18f; setPadding(0, 0, 0, 12)
+                })
+                content.addView(TextView(this).apply {
+                    text = "Toca tus favoritos. Tu selección se conserva al avanzar y se guarda al finalizar."
+                    textSize = 16f; setPadding(0, 0, 0, 12)
+                })
+                if (!genreStep) {
+                    options.drop(page * 6).take(6).chunked(2).forEach { row ->
+                        val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                        row.forEach { entry ->
+                            val name = entry.value.first().mediaMetadata.artist.toString()
+                            val selected = CheckBox(this).apply { text = name; textSize = 16f; isChecked = entry.key in artists }
+                            val background = GradientDrawable().apply { cornerRadius = 24f; setColor(Color.rgb(19, 48, 70)) }
+                            val card = LinearLayout(this).apply {
+                                orientation = LinearLayout.VERTICAL; setPadding(12, 12, 12, 8)
+                                this.background = background
+                                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(5, 5, 5, 5) }
+                            }
+                            val picture = ImageView(this).apply {
+                                setImageResource(R.drawable.ic_radio); scaleType = ImageView.ScaleType.CENTER_CROP
+                                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (125 * resources.displayMetrics.density).toInt())
+                            }
+                            selected.setTextColor(Color.WHITE)
+                            fun showSelection() { background.setStroke((if (selected.isChecked) 3 else 1) * resources.displayMetrics.density.toInt().coerceAtLeast(1), if (selected.isChecked) Color.rgb(255, 206, 87) else Color.rgb(62, 91, 111)) }
+                            selected.setOnCheckedChangeListener { _, checked ->
+                                if (checked) artists.add(entry.key) else artists.remove(entry.key)
+                                showSelection()
+                            }
+                            card.setOnClickListener { selected.isChecked = !selected.isChecked }
+                            showSelection(); card.addView(picture); card.addView(selected); line.addView(card)
+                            val uri = entry.value.firstOrNull { it.mediaMetadata.artworkUri?.scheme == "content" }?.mediaMetadata?.artworkUri
+                            if (uri != null) tasteArtworkExecutor.execute {
+                                val bitmap = runCatching {
+                                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                    bytes?.let {
+                                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                        BitmapFactory.decodeByteArray(it, 0, it.size, bounds)
+                                        if (bounds.outWidth > 0 && bounds.outHeight > 0) BitmapFactory.decodeByteArray(it, 0, it.size, BitmapFactory.Options().apply { inSampleSize = (maxOf(bounds.outWidth, bounds.outHeight) / 384).coerceAtLeast(1) }) else null
+                                    }
+                                }.getOrNull()
+                                runOnUiThread { if (!isDestroyed && dialog.isShowing && generation == activeGeneration && bitmap != null) picture.setImageBitmap(bitmap) }
+                            }
+                        }
+                        content.addView(line)
+                    }
+                    content.addView(TextView(this).apply { text = "Imágenes de las portadas de la biblioteca."; textSize = 14f; setPadding(0, 12, 0, 12) })
+                } else {
+                    genreNames.forEach { name ->
+                        val key = RadioPreferences.key(name)
+                        content.addView(CheckBox(this).apply {
+                            text = name; textSize = 16f; isChecked = key in genres
+                            setOnCheckedChangeListener { _, checked -> if (checked) genres.add(key) else genres.remove(key) }
+                        })
+                    }
+                    if (genreNames.isEmpty()) content.addView(TextView(this).apply { text = "Aún no hay géneros registrados. Puedes guardar tus artistas favoritos."; textSize = 16f })
                 }
-            })
+                content.addView(Button(this).apply {
+                    text = "Me gusta de todo"
+                    setOnClickListener { RadioPreferences.reset(this@MainActivity); applyTastes(); dialog.dismiss() }
+                })
+                content.addView(Button(this).apply {
+                    text = "Reiniciar gustos"
+                    setOnClickListener {
+                        AlertDialog.Builder(this@MainActivity).setMessage("¿Reiniciar tus artistas y géneros favoritos?")
+                            .setPositiveButton("Reiniciar") { _, _ -> RadioPreferences.reset(this@MainActivity); applyTastes(); dialog.dismiss() }
+                            .setNegativeButton("Cancelar", null).show()
+                    }
+                })
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).isEnabled = genreStep || page > 0
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).text = if (genreStep) "Finalizar y guardar" else if (page + 1 == pages) "Siguiente: géneros" else "Siguiente"
+            }
             dialog.show()
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                if (genreStep) genreStep = false else page = (page - 1).coerceAtLeast(0)
+                renderChoices(); scroll.scrollTo(0, 0)
+            }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (genreStep) {
+                    RadioPreferences.save(this, RadioPreferences.Tastes(artists, genres)); applyTastes(); dialog.dismiss()
+                } else {
+                    if (page + 1 < pages) page += 1 else genreStep = true
+                    renderChoices(); scroll.scrollTo(0, 0)
+                }
+            }
+            renderChoices()
         }, ContextCompat.getMainExecutor(this))
     }
 
@@ -450,6 +518,7 @@ class MainActivity : ComponentActivity() {
         browser?.removeListener(listener)
         unregisterReceiver(networkWarningReceiver)
         lyricExecutor.shutdownNow()
+        tasteArtworkExecutor.shutdownNow()
         MediaBrowser.releaseFuture(browserFuture)
         super.onDestroy()
     }
