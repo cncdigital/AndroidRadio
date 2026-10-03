@@ -63,8 +63,10 @@ class RadioPlaybackTest {
                 volume = 0f
                 setMediaItem(MediaItem.fromUri(Uri.fromFile(wav)))
                 prepare()
+                play()
             }
         }
+        awaitMusic(player)
         val session = onMain {
             MediaLibraryService.MediaLibrarySession.Builder(context, player, RadioPlaybackService().callback).build()
         }
@@ -74,17 +76,17 @@ class RadioPlaybackTest {
             controller = future.get(10, TimeUnit.SECONDS)
             onMain {
                 // The Auto-specific command filter must not affect the phone/app controller.
-                assertTrue(controller!!.availableCommands.contains(Player.COMMAND_SEEK_BACK))
-                assertTrue(controller!!.availableCommands.contains(Player.COMMAND_SEEK_FORWARD))
-                assertTrue(controller!!.availableCommands.contains(Player.COMMAND_PLAY_PAUSE))
+                assertTrue("Default seek-back is missing", controller!!.availableCommands.contains(Player.COMMAND_SEEK_BACK))
+                assertTrue("Default seek-forward is missing", controller!!.availableCommands.contains(Player.COMMAND_SEEK_FORWARD))
+                assertTrue("Play/pause is missing", controller!!.availableCommands.contains(Player.COMMAND_PLAY_PAUSE))
                 controller!!.play()
             }
             awaitMusic(player)
-            onMain {
-                controller!!.pause()
-                assertFalse(player.playWhenReady)
-                controller!!.play()
-            }
+            onMain { controller!!.pause() }
+            val pauseDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (onMain { player.playWhenReady } && System.nanoTime() < pauseDeadline) Thread.sleep(25)
+            assertFalse("Controller pause did not reach the player", onMain { player.playWhenReady })
+            onMain { controller!!.play() }
             awaitMusic(player)
         } finally {
             onMain { controller?.release(); session.release(); player.release() }

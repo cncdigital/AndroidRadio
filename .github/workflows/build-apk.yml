@@ -54,6 +54,10 @@ jobs:
           disable-animations: true
           script: cd "$GITHUB_WORKSPACE/android-app" && gradle connectedDebugAndroidTest --no-daemon --stacktrace
 
+      - name: Mostrar diagnóstico de pruebas Android si fallan
+        if: failure()
+        run: find app/build/outputs/androidTest-results -name '*.xml' -exec cat {} \\;
+
       - name: Compilar APK firmado
         env:
           RADIO_SIGNING_STORE_FILE: ${{ runner.temp }}/radiosindical.jks
