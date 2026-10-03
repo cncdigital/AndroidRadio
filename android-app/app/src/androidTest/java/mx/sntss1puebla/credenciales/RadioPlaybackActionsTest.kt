@@ -1,9 +1,12 @@
 package mx.sntss1puebla.credenciales
 
 import androidx.media3.common.Player
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
 
+@RunWith(AndroidJUnit4::class)
 class RadioPlaybackActionsTest {
     @Test fun externalControlsSkipSongsWithoutTenSecondJumps() {
         val commands = RadioPlaybackActions.externalCommands()
