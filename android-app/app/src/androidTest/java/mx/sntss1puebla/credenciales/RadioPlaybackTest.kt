@@ -5,6 +5,8 @@ import android.os.Looper
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaController
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.test.platform.app.InstrumentationRegistry
@@ -51,6 +53,45 @@ class RadioPlaybackTest {
         }
         fail("Reproducir remained stalled at ${onMain { player.currentPosition }} ms")
     }
+
+    @Test fun ordinaryControllerKeepsDefaultTransportAndCanResumePlayback() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val wav = tone()
+        val player = onMain {
+            RadioMusicPlayerFactory.create(context, DefaultMediaSourceFactory(context), KaraokeAudioProcessor(), false).apply {
+                setAudioAttributes(audioAttributes, false)
+                volume = 0f
+                setMediaItem(MediaItem.fromUri(Uri.fromFile(wav)))
+                prepare()
+            }
+        }
+        val session = onMain {
+            MediaLibraryService.MediaLibrarySession.Builder(context, player, RadioPlaybackService().callback).build()
+        }
+        val future = onMain { MediaController.Builder(context, session.token).buildAsync() }
+        var controller: MediaController? = null
+        try {
+            controller = future.get(10, TimeUnit.SECONDS)
+            onMain {
+                // The Auto-specific command filter must not affect the phone/app controller.
+                assertTrue(controller!!.availableCommands.contains(Player.COMMAND_SEEK_BACK))
+                assertTrue(controller!!.availableCommands.contains(Player.COMMAND_SEEK_FORWARD))
+                assertTrue(controller!!.availableCommands.contains(Player.COMMAND_PLAY_PAUSE))
+                controller!!.play()
+            }
+            awaitMusic(player)
+            onMain {
+                controller!!.pause()
+                assertFalse(player.playWhenReady)
+                controller!!.play()
+            }
+            awaitMusic(player)
+        } finally {
+            onMain { controller?.release(); session.release(); player.release() }
+            wav.delete()
+        }
+    }
+
     @Test fun normalAndKaraokeOutputActuallyAdvanceAndResumeAfterStop() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val wav = tone()

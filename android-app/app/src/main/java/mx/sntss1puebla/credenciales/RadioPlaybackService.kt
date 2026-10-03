@@ -156,12 +156,18 @@ class RadioPlaybackService : MediaLibraryService() {
         karaokeButton(),
     )
 
-    private val callback = object : MediaLibrarySession.Callback {
+    internal val callback = object : MediaLibrarySession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
             if (!controller.isTrusted) return super.onConnect(session, controller)
+            val automotive = session.isAutoCompanionController(controller) || session.isAutomotiveController(controller)
+            val notification = session.isMediaNotificationController(controller)
+            // Keep ordinary controllers and legacy dashboard discovery on Media3 defaults.
+            // Only the system notification (which configures the platform session) and Auto
+            // need the track-only transport policy.
+            if (!automotive && !notification) return super.onConnect(session, controller)
             val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailablePlayerCommands(RadioPlaybackActions.externalCommands())
-                .setMediaButtonPreferences(automotiveButtons())
+                .setMediaButtonPreferences(if (automotive) automotiveButtons() else automotiveButtons().take(2))
                 .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(karaokeCommand).build())
             return result.build()
         }
@@ -389,7 +395,6 @@ class RadioPlaybackService : MediaLibraryService() {
         val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         librarySession = MediaLibrarySession.Builder(this, player, callback)
-            .setMediaButtonPreferences(automotiveButtons())
             .setSessionActivity(openApp)
             .build()
         // Warm the public song catalog without blocking Android Auto's connection.
