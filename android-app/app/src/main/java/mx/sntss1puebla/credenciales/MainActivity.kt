@@ -222,12 +222,13 @@ class MainActivity : ComponentActivity() {
                     connection.disconnect()
                 }
             }.getOrNull()
-            if (update?.isNewerThan(BuildConfig.VERSION_CODE) != true) return@execute
+            val installedVersion = runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull() ?: return@execute
+            if (update?.isNewerThan(installedVersion.versionCode) != true) return@execute
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 AlertDialog.Builder(this)
                     .setTitle("Actualización disponible")
-                    .setMessage("Ya está disponible Radio Sindical ${update.versionName}. Tu versión es ${BuildConfig.VERSION_NAME}. Actualiza para tener las últimas mejoras.")
+                    .setMessage("Ya está disponible Radio Sindical ${update.versionName}. Tu versión es ${installedVersion.versionName}. Actualiza para tener las últimas mejoras.")
                     .setNegativeButton("Después", null)
                     .setPositiveButton("Actualizar") { _, _ ->
                         runCatching {
