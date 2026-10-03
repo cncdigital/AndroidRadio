@@ -47,6 +47,8 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private val catalogExecutor = Executors.newSingleThreadExecutor()
+    private val songsLoadingLock = Any()
+    @Volatile private var songsLoading: ListenableFuture<List<MediaItem>>? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var voicePlayer: ExoPlayer
     private val karaokeProcessor = KaraokeAudioProcessor()
@@ -113,9 +115,46 @@ class RadioPlaybackService : MediaLibraryService() {
         if (::librarySession.isInitialized) {
             librarySession.setSessionExtras(Bundle().apply { putBoolean("radio.karaoke.active", enabled) })
             librarySession.connectedControllers.filter { librarySession.isAutoCompanionController(it) || librarySession.isAutomotiveController(it) }
-                .forEach { librarySession.setMediaButtonPreferences(it, listOf(karaokeButton())) }
+                .forEach { librarySession.setMediaButtonPreferences(it, automotiveButtons()) }
         }
     }
+
+    private fun loadSongsIfNeeded(): ListenableFuture<List<MediaItem>> {
+        if (songs.isNotEmpty()) return Futures.immediateFuture(songs)
+        synchronized(songsLoadingLock) {
+            if (songs.isNotEmpty()) return Futures.immediateFuture(songs)
+            songsLoading?.let { return it }
+            val loading = SettableFuture.create<List<MediaItem>>()
+            songsLoading = loading
+            catalogExecutor.execute {
+                try {
+                    refreshCatalog()
+                    loading.set(songs)
+                } catch (error: Exception) {
+                    loading.setException(error)
+                } finally {
+                    synchronized(songsLoadingLock) {
+                        if (songsLoading === loading) songsLoading = null
+                    }
+                }
+            }
+            return loading
+        }
+    }
+
+    private fun automotiveButtons(): List<CommandButton> = listOf(
+        CommandButton.Builder(CommandButton.ICON_PREVIOUS)
+            .setDisplayName("Canción anterior")
+            .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+            .setSlots(CommandButton.SLOT_BACK)
+            .build(),
+        CommandButton.Builder(CommandButton.ICON_NEXT)
+            .setDisplayName("Siguiente canción")
+            .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+            .setSlots(CommandButton.SLOT_FORWARD)
+            .build(),
+        karaokeButton(),
+    )
 
     private val callback = object : MediaLibrarySession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
@@ -123,7 +162,7 @@ class RadioPlaybackService : MediaLibraryService() {
             val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(karaokeCommand).build())
             if (session.isAutoCompanionController(controller) || session.isAutomotiveController(controller))
-                result.setMediaButtonPreferences(listOf(karaokeButton()))
+                result.setMediaButtonPreferences(automotiveButtons())
             return result.build()
         }
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
@@ -170,22 +209,46 @@ class RadioPlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> {
-            val item = when (mediaId) {
+            val fixedItem = when (mediaId) {
                 RadioCatalog.ROOT_ID -> RadioCatalog.rootItem()
                 RadioCatalog.SONGS_ID -> RadioCatalog.songsFolder()
-                else -> songs.firstOrNull { it.mediaId == mediaId }
+                else -> null
             }
-            return Futures.immediateFuture(if (item != null) LibraryResult.ofItem(item, null)
-                else LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+            if (fixedItem != null) return Futures.immediateFuture(LibraryResult.ofItem(fixedItem, null))
+            songs.firstOrNull { it.mediaId == mediaId }?.let {
+                return Futures.immediateFuture(LibraryResult.ofItem(it, null))
+            }
+            val loaded = loadSongsIfNeeded()
+            val result = SettableFuture.create<LibraryResult<MediaItem>>()
+            loaded.addListener({
+                try {
+                    val item = loaded.get().firstOrNull { it.mediaId == mediaId }
+                    result.set(if (item != null) LibraryResult.ofItem(item, null)
+                        else LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+                } catch (error: Exception) {
+                    result.setException(error)
+                }
+            }, catalogExecutor)
+            return result
         }
 
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: List<MediaItem>,
-        ): ListenableFuture<List<MediaItem>> = Futures.immediateFuture(
-            mediaItems.mapNotNull { candidate -> songs.firstOrNull { it.mediaId == candidate.mediaId } },
-        )
+        ): ListenableFuture<List<MediaItem>> {
+            val loaded = loadSongsIfNeeded()
+            val result = SettableFuture.create<List<MediaItem>>()
+            loaded.addListener({
+                try {
+                    val catalog = loaded.get().associateBy { it.mediaId }
+                    result.set(mediaItems.mapNotNull { candidate -> catalog[candidate.mediaId] })
+                } catch (error: Exception) {
+                    result.setException(error)
+                }
+            }, catalogExecutor)
+            return result
+        }
 
         @androidx.annotation.OptIn(UnstableApi::class)
         override fun onSetMediaItems(
@@ -195,12 +258,17 @@ class RadioPlaybackService : MediaLibraryService() {
             startIndex: Int,
             startPositionMs: Long,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-            val selected = mediaItems.getOrNull(startIndex)
-            val index = songs.indexOfFirst { it.mediaId == selected?.mediaId }
-            val queue = if (mediaItems.size == 1 && index >= 0) songs
-                else mediaItems.mapNotNull { candidate -> songs.firstOrNull { it.mediaId == candidate.mediaId } }
-            val position = if (queue === songs) index else startIndex.coerceIn(0, (queue.size - 1).coerceAtLeast(0))
-            return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(queue, position, startPositionMs))
+            val loaded = loadSongsIfNeeded()
+            val result = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            loaded.addListener({
+                try {
+                    val queue = RadioQueueResolver.resolve(mediaItems, startIndex, loaded.get())
+                    result.set(MediaSession.MediaItemsWithStartPosition(queue.mediaItems, queue.startIndex, startPositionMs))
+                } catch (error: Exception) {
+                    result.setException(error)
+                }
+            }, catalogExecutor)
+            return result
         }
     }
 
@@ -323,6 +391,8 @@ class RadioPlaybackService : MediaLibraryService() {
         librarySession = MediaLibrarySession.Builder(this, player, callback)
             .setSessionActivity(openApp)
             .build()
+        // Warm the public song catalog without blocking Android Auto's connection.
+        loadSongsIfNeeded()
     }
 
     private fun createMusicPlayer(withKaraoke: Boolean): ExoPlayer = RadioMusicPlayerFactory.create(

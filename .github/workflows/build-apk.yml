@@ -72,7 +72,7 @@ jobs:
       - name: Conservar APK firmado de esta compilación
         uses: actions/upload-artifact@v4
         with:
-          name: RadioSindical-0.10.16
+          name: RadioSindical-0.10.17
           path: android-app/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
