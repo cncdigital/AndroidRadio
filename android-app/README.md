@@ -43,3 +43,6 @@ Se ofrece a Android Auto un control Karaoke en las acciones adicionales (overflo
 ## Recuperación de reproducción (0.10.13)
 
 Con karaoke apagado se usa el renderer y salida de audio estándar de ExoPlayer. El procesador de karaoke se instala sólo al activar el modo; al cambiar se conserva canción, posición, cola y pausa/reproducción. Si el efecto falla, se restaura el reproductor normal una sola vez. El botón Reproducir vuelve a preparar un reproductor detenido por error y permite reintentar sin cerrar la app. Los errores muestran su código para poder distinguir red, decodificación y salida de audio.
+
+
+Sin gustos seleccionados, se priorizan canciones menos escuchadas en este dispositivo, y entre ellas las más recientemente agregadas. Solo las reproducciones completas suman al historial local; los comerciales y saltos no se contabilizan. No se envían estadísticas personales. Se conserva la selección explícita de favoritos.

@@ -53,6 +53,7 @@ internal object RadioCatalog {
                         .setUri("$ORIGIN/api/radio/${if (commercial) "commercial" else "audio"}/$id${if (commercial) "" else preferred}")
                         .setMimeType(MimeTypes.AUDIO_MPEG)
                         .setMediaMetadata(MediaMetadata.Builder()
+                            .setExtras(android.os.Bundle().apply { putLong("uploadedAtEpoch", track.optLong("uploadedAtEpoch", 0L).coerceAtLeast(0L)) })
                             .setTitle(if (commercial) "Comercial · $title" else title)
                             .setArtist(track.optString("artist").ifBlank { "Radio Sindical" })
                             .setGenre(track.optString("genre"))

@@ -344,6 +344,10 @@ class RadioPlaybackService : MediaLibraryService() {
                 if (tastesPending && item?.mediaId?.startsWith("song:") == true) mainHandler.post { applyTastes() }
                 val previous = lastMediaId
                 lastMediaId = item?.mediaId
+                if (previous?.startsWith("song:") == true &&
+                    (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)) {
+                    RadioPreferences.recordCompleted(this@RadioPlaybackService, previous)
+                }
                 if (item?.mediaId?.startsWith("song:") == true && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && previous != item.mediaId) {
                     pendingIntroduction = true
                     mainHandler.post { if (player.currentMediaItem?.mediaId == item.mediaId) announceIfDue(item) }

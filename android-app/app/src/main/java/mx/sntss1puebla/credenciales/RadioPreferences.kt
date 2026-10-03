@@ -36,6 +36,12 @@ internal object RadioPreferences {
     }
     fun order(context: Context, songs: List<MediaItem>, previousId: String? = null): List<MediaItem> {
         val tastes = read(context)
+        if (tastes.artists.isEmpty() && tastes.genres.isEmpty() && tastes.songs.isEmpty()) {
+            val history = context.getSharedPreferences("radio_listens", Context.MODE_PRIVATE)
+            return RadioDiscovery.order(songs, previousId, { it.mediaId },
+                { history.getInt(it.mediaId, 0).coerceAtLeast(0) },
+                { it.mediaMetadata.extras?.getLong("uploadedAtEpoch") ?: 0L })
+        }
         val ordered = songs.map { song ->
             val weight = 1 + (if (song.mediaId in tastes.songs) 8 else 0) + (if (key(song.mediaMetadata.artist?.toString().orEmpty()) in tastes.artists) 3 else 0) +
                 (if (key(song.mediaMetadata.genre?.toString().orEmpty()) in tastes.genres) 3 else 0)
@@ -43,5 +49,11 @@ internal object RadioPreferences {
         }.sortedBy { it.second }.map { it.first }.toMutableList()
         if (ordered.size > 1 && ordered.first().mediaId == previousId) java.util.Collections.swap(ordered, 0, 1)
         return ordered
+    }
+    fun recordCompleted(context: Context, id: String) {
+        if (!Regex("song:[1-9][0-9]{0,12}").matches(id)) return
+        val history = context.getSharedPreferences("radio_listens", Context.MODE_PRIVATE)
+        val count = history.getInt(id, 0).coerceAtLeast(0)
+        history.edit().putInt(id, if (count == Int.MAX_VALUE) count else count + 1).apply()
     }
 }
