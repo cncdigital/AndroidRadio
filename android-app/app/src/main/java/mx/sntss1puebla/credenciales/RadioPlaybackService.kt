@@ -160,9 +160,9 @@ class RadioPlaybackService : MediaLibraryService() {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
             if (!controller.isTrusted) return super.onConnect(session, controller)
             val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+                .setAvailablePlayerCommands(RadioPlaybackActions.externalCommands())
+                .setMediaButtonPreferences(automotiveButtons())
                 .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(karaokeCommand).build())
-            if (session.isAutoCompanionController(controller) || session.isAutomotiveController(controller))
-                result.setMediaButtonPreferences(automotiveButtons())
             return result.build()
         }
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
@@ -389,6 +389,7 @@ class RadioPlaybackService : MediaLibraryService() {
         val openApp = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         librarySession = MediaLibrarySession.Builder(this, player, callback)
+            .setMediaButtonPreferences(automotiveButtons())
             .setSessionActivity(openApp)
             .build()
         // Warm the public song catalog without blocking Android Auto's connection.
