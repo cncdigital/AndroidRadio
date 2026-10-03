@@ -52,6 +52,9 @@ import java.util.concurrent.Executors
 
 /** Phone player. Android Auto renders the same MediaLibrarySession using its own safe controls. */
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val RADIO_VERSION_URL = "https://raw.githubusercontent.com/cncdigital/AndroidRadio/apk/radio-version.json"
+    }
     private lateinit var browserFuture: ListenableFuture<MediaBrowser>
     private var browser: MediaBrowser? = null
     private var karaokeActive = false
@@ -75,6 +78,7 @@ class MainActivity : ComponentActivity() {
     private var coverBitmap: Bitmap? = null
     private var currentGhost = ""
     private val lyricExecutor = Executors.newSingleThreadExecutor()
+    private val updateExecutor = Executors.newSingleThreadExecutor()
     private val tasteArtworkExecutor = Executors.newFixedThreadPool(2)
     private var currentLyricSongId = -1
     private var timedLyrics: List<TimedLyric> = emptyList()
@@ -200,6 +204,41 @@ class MainActivity : ComponentActivity() {
             }
         }, ContextCompat.getMainExecutor(this))
         handler.post(tick)
+        checkForRadioUpdate()
+    }
+
+    private fun checkForRadioUpdate() {
+        updateExecutor.execute {
+            val update = runCatching {
+                val connection = java.net.URL(RADIO_VERSION_URL).openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 4_000
+                connection.readTimeout = 4_000
+                connection.useCaches = false
+                connection.setRequestProperty("Cache-Control", "no-cache")
+                try {
+                    if (connection.responseCode != java.net.HttpURLConnection.HTTP_OK) null
+                    else connection.inputStream.bufferedReader().use { RadioAppUpdate.parse(it.readText()) }
+                } finally {
+                    connection.disconnect()
+                }
+            }.getOrNull()
+            if (update?.isNewerThan(BuildConfig.VERSION_CODE) != true) return@execute
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                AlertDialog.Builder(this)
+                    .setTitle("Actualización disponible")
+                    .setMessage("Ya está disponible Radio Sindical ${update.versionName}. Tu versión es ${BuildConfig.VERSION_NAME}. Actualiza para tener las últimas mejoras.")
+                    .setNegativeButton("Después", null)
+                    .setPositiveButton("Actualizar") { _, _ ->
+                        runCatching {
+                            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(update.apkUrl)))
+                        }.onFailure {
+                            Toast.makeText(this, "No se pudo abrir la descarga. Intenta desde la página de Radio Sindical.", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    .show()
+            }
+        }
     }
 
     private fun resumePlayback(player: MediaBrowser) {
@@ -595,6 +634,7 @@ class MainActivity : ComponentActivity() {
         browser?.removeListener(listener)
         unregisterReceiver(networkWarningReceiver)
         lyricExecutor.shutdownNow()
+        updateExecutor.shutdownNow()
         tasteArtworkExecutor.shutdownNow()
         MediaBrowser.releaseFuture(browserFuture)
         super.onDestroy()

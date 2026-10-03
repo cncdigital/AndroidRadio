@@ -69,22 +69,35 @@ jobs:
           OUT=$("$ANDROID_HOME"/build-tools/36.0.0/apksigner verify --print-certs "$APK"); echo "$OUT"
           echo "$OUT" | grep -qi "SHA-256 digest: 89c6a0e71776d62240dd55bdceed9edbe46fe02b7102ae02d6fafae8d0bf642e" || { echo "::error::El APK no tiene la firma permanente"; exit 1; }
 
+      - name: Leer versión publicada
+        id: radio_version
+        run: |
+          VERSION_CODE=$(grep -E 'versionCode = ' app/build.gradle.kts | grep -oE '[0-9]+')
+          VERSION_NAME=$(grep -E 'versionName = ' app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
+          test -n "$VERSION_CODE" && test -n "$VERSION_NAME"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
       - name: Conservar APK firmado de esta compilación
         uses: actions/upload-artifact@v4
         with:
-          name: RadioSindical-0.10.17
+          name: RadioSindical-${{ steps.radio_version.outputs.version_name }}
           path: android-app/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
 
       - name: Publicar APK en la rama apk
+        env:
+          RADIO_VERSION_CODE: ${{ steps.radio_version.outputs.version_code }}
+          RADIO_VERSION_NAME: ${{ steps.radio_version.outputs.version_name }}
         run: |
           mkdir -p /tmp/apk && cp app/build/outputs/apk/release/app-release.apk /tmp/apk/RadioSindical.apk
+          printf '{"versionCode":%s,"versionName":"%s","apkUrl":"https://raw.githubusercontent.com/cncdigital/AndroidRadio/apk/RadioSindical.apk"}\\n' "$RADIO_VERSION_CODE" "$RADIO_VERSION_NAME" > /tmp/apk/radio-version.json
           rm -f "$RUNNER_TEMP/radiosindical.jks"
           cd /tmp/apk
           git init -q -b apk
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add RadioSindical.apk
-          git commit -qm "APK de ${GITHUB_SHA::7}"
+          git add RadioSindical.apk radio-version.json
+          git commit -qm "APK $RADIO_VERSION_NAME de ${GITHUB_SHA::7}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" apk
