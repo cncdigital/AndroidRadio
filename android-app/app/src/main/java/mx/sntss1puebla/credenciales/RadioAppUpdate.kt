@@ -6,9 +6,9 @@ data class RadioAppUpdate(val versionCode: Int, val versionName: String, val apk
     fun isNewerThan(installedVersionCode: Int): Boolean = versionCode > installedVersionCode
 
     companion object {
-        private val VERSION_CODE = Regex(""""versionCode"\\s*:\\s*(\\d+)""")
-        private val VERSION_NAME = Regex(""""versionName"\\s*:\\s*"([^"\\r\\n]{1,32})"""")
-        private val APK_URL = Regex(""""apkUrl"\\s*:\\s*"([^"\\r\\n]{1,300})"""")
+        private val VERSION_CODE = Regex(""""versionCode"\s*:\s*(\d+)""")
+        private val VERSION_NAME = Regex(""""versionName"\s*:\s*"([^"\r\n]{1,32})"""")
+        private val APK_URL = Regex(""""apkUrl"\s*:\s*"([^"\r\n]{1,300})"""")
 
         fun parse(json: String): RadioAppUpdate? {
             val code = VERSION_CODE.find(json)?.groupValues?.get(1)?.toIntOrNull() ?: return null

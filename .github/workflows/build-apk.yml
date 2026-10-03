@@ -92,7 +92,7 @@ jobs:
           RADIO_VERSION_NAME: ${{ steps.radio_version.outputs.version_name }}
         run: |
           mkdir -p /tmp/apk && cp app/build/outputs/apk/release/app-release.apk /tmp/apk/RadioSindical.apk
-          printf '{"versionCode":%s,"versionName":"%s","apkUrl":"https://raw.githubusercontent.com/cncdigital/AndroidRadio/apk/RadioSindical.apk"}\\n' "$RADIO_VERSION_CODE" "$RADIO_VERSION_NAME" > /tmp/apk/radio-version.json
+          printf '{"versionCode":%s,"versionName":"%s","apkUrl":"https://raw.githubusercontent.com/cncdigital/AndroidRadio/apk/RadioSindical.apk"}\n' "$RADIO_VERSION_CODE" "$RADIO_VERSION_NAME" > /tmp/apk/radio-version.json
           rm -f "$RUNNER_TEMP/radiosindical.jks"
           cd /tmp/apk
           git init -q -b apk
