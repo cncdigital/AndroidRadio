@@ -54,6 +54,42 @@ class RadioPlaybackTest {
         fail("Reproducir remained stalled at ${onMain { player.currentPosition }} ms")
     }
 
+    @Test fun queueAdvancesAndWrapsWithoutEndingPlayback() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val wav = tone()
+        val transitions = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val player = onMain {
+            RadioMusicPlayerFactory.create(context, DefaultMediaSourceFactory(context), KaraokeAudioProcessor(), false).apply {
+                setAudioAttributes(audioAttributes, false)
+                volume = 0f
+                addListener(object : Player.Listener {
+                    override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) transitions.add(item?.mediaId.orEmpty())
+                    }
+                })
+                setMediaItems(listOf("song:1", "song:2").map {
+                    MediaItem.Builder().setMediaId(it).setUri(Uri.fromFile(wav)).build()
+                })
+                prepare()
+                play()
+            }
+        }
+        try {
+            awaitMusic(player)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+            while (transitions.size < 2 && System.nanoTime() < deadline) {
+                assertNull(onMain { player.playerError })
+                Thread.sleep(50)
+            }
+            assertEquals(listOf("song:2", "song:1"), transitions.take(2))
+            assertTrue(onMain { player.playWhenReady })
+            assertNotEquals(Player.STATE_ENDED, onMain { player.playbackState })
+        } finally {
+            onMain { player.release() }
+            wav.delete()
+        }
+    }
+
     @Test fun ordinaryControllerKeepsDefaultTransportAndCanResumePlayback() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val wav = tone()

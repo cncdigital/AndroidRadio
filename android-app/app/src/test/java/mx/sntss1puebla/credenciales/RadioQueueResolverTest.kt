@@ -34,5 +34,14 @@ class RadioQueueResolverTest {
         assertEquals(1, result.startIndex)
     }
 
+    @Test
+    fun carSelectionWithUnsetIndexRestoresTheFullQueueAtSelectedSong() {
+        val first = song("song:1")
+        val second = song("song:2")
+        val result = RadioQueueResolver.resolve(listOf(second), androidx.media3.common.C.INDEX_UNSET, listOf(first, second))
+        assertEquals(listOf(first, second), result.mediaItems)
+        assertEquals(1, result.startIndex)
+    }
+
     private fun song(id: String): MediaItem = MediaItem.Builder().setMediaId(id).build()
 }

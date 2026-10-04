@@ -15,6 +15,7 @@ internal object RadioQueueResolver {
         catalog: List<MediaItem>,
     ): RadioQueueResolution {
         val selectedId = requestedItems.getOrNull(requestedStartIndex)?.mediaId
+            ?: requestedItems.firstOrNull()?.mediaId
         val catalogById = catalog.associateBy { it.mediaId }
         val selectedInCatalog = selectedId?.let { id -> catalog.indexOfFirst { it.mediaId == id } } ?: -1
         val queue = if (requestedItems.size == 1 && selectedInCatalog >= 0) {

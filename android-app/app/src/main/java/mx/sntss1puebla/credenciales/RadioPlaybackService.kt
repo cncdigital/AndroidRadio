@@ -443,6 +443,9 @@ class RadioPlaybackService : MediaLibraryService() {
         if (intent?.action == ACTION_SET_KARAOKE) {
             setKaraoke(intent.getBooleanExtra("enabled", false))
         }
+        // Forward platform media-button and foreground-service intents to Media3.
+        // Otherwise Auto/Bluetooth resume and notification actions are swallowed.
+        super.onStartCommand(intent, flags, startId)
         // Keep the media service eligible for restart if Android reclaims the
         // process while an active playback session is still in use.
         return START_STICKY
