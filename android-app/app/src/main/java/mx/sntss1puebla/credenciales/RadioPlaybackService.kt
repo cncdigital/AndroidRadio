@@ -181,10 +181,14 @@ class RadioPlaybackService : MediaLibraryService() {
             if (!controller.isTrusted) return super.onConnect(session, controller)
             val automotive = session.isAutoCompanionController(controller) || session.isAutomotiveController(controller)
             val notification = session.isMediaNotificationController(controller)
-            // Keep ordinary controllers and legacy dashboard discovery on Media3 defaults.
-            // Only the system notification (which configures the platform session) and Auto
-            // need the track-only transport policy.
-            if (!automotive && !notification) return super.onConnect(session, controller)
+            // Give the phone's own controller the shuffle command while preserving its
+            // normal trusted player commands. Auto/notification keep the track-only policy.
+            if (!automotive && !notification) {
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+                    .setAvailablePlayerCommands(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS)
+                    .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(shuffleCommand).build())
+                    .build()
+            }
             val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailablePlayerCommands(RadioPlaybackActions.externalCommands())
                 .setMediaButtonPreferences(if (automotive) automotiveButtons() else automotiveButtons().take(2))

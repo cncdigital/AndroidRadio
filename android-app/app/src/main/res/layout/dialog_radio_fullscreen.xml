@@ -18,6 +18,10 @@
             android:textColor="#FFFFFF" android:textSize="14sp" />
         <Button android:id="@+id/full_favorite" android:layout_width="match_parent"
             android:layout_height="48dp" android:text="♡ Favorito" android:contentDescription="Guardar canción favorita" />
+        <Button android:id="@+id/full_shuffle" android:layout_width="match_parent"
+            android:layout_height="48dp" android:layout_marginTop="6dp"
+            android:backgroundTint="@color/sntss_gold" android:text="@string/radio_shuffle"
+            android:contentDescription="@string/radio_shuffle_desc" />
         <Button android:id="@+id/full_karaoke" android:layout_width="match_parent"
             android:layout_height="48dp" android:text="Karaoke · reducir voz"
             android:contentDescription="Activar karaoke con reducción de voz central; depende de la mezcla original" />

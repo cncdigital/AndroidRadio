@@ -46,6 +46,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.session.MediaBrowser
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import java.util.concurrent.Executors
@@ -59,6 +61,7 @@ class MainActivity : ComponentActivity() {
     private var browser: MediaBrowser? = null
     private var karaokeActive = false
     private var playWhenConnected = false
+    private var shuffleWhenConnected = false
     private lateinit var title: TextView
     private lateinit var artist: TextView
     private lateinit var status: TextView
@@ -156,6 +159,7 @@ class MainActivity : ComponentActivity() {
         findViewById<Button>(R.id.close_radio).setOnClickListener { closeRadioApp() }
         findViewById<Button>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
         findViewById<Button>(R.id.radio_favorite).setOnClickListener { toggleFavorite() }
+        findViewById<Button>(R.id.radio_shuffle).setOnClickListener { shuffleRadio() }
         findViewById<Button>(R.id.radio_tastes).setOnClickListener { showTastes() }
         findViewById<Button>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
         val qualityLabels = listOf(
@@ -199,8 +203,10 @@ class MainActivity : ComponentActivity() {
             browser?.addListener(listener)
             render()
             if (playWhenConnected) {
+                val shuffleFirst = shuffleWhenConnected
                 playWhenConnected = false
-                startRadio()
+                shuffleWhenConnected = false
+                startRadio(randomizeAtStart = shuffleFirst)
             }
         }, ContextCompat.getMainExecutor(this))
         handler.post(tick)
@@ -247,26 +253,49 @@ class MainActivity : ComponentActivity() {
         RadioPlaybackActions.resume(player)
     }
 
-    private fun startRadio() {
+    private fun startRadio(randomizeAtStart: Boolean = false) {
         val controller = browser ?: run {
             playWhenConnected = true
+            shuffleWhenConnected = randomizeAtStart
             status.setText(R.string.radio_connecting)
             return
         }
         status.setText(R.string.radio_connecting)
         playButton.isEnabled = false
+        findViewById<Button>(R.id.radio_shuffle).isEnabled = false
         val songsFuture = controller.getChildren(RadioCatalog.SONGS_ID, 0, 500, null)
         songsFuture.addListener({
             playButton.isEnabled = true
+            findViewById<Button>(R.id.radio_shuffle).isEnabled = true
             val songs = runCatching { songsFuture.get().value }.getOrNull()
             if (songs.isNullOrEmpty()) {
                 status.setText(R.string.radio_sign_in)
                 return@addListener
             }
-            controller.setMediaItems(songs)
+            controller.setMediaItems(if (randomizeAtStart) RadioShuffle.upcoming(songs) else songs)
             controller.prepare()
             controller.play()
             render()
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun shuffleRadio() {
+        val controller = browser
+        if (controller == null || controller.mediaItemCount == 0) {
+            startRadio(randomizeAtStart = true)
+            return
+        }
+        val request = controller.sendCustomCommand(
+            SessionCommand("radio.queue.shuffle", Bundle.EMPTY), Bundle.EMPTY
+        )
+        request.addListener({
+            val succeeded = runCatching { request.get().resultCode == SessionResult.RESULT_SUCCESS }.getOrDefault(false)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val message = if (succeeded) "Canciones siguientes mezcladas; la actual continúa."
+                    else "No se pudieron mezclar las canciones. Intenta de nuevo."
+                Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+            }
         }, ContextCompat.getMainExecutor(this))
     }
 
@@ -583,6 +612,7 @@ class MainActivity : ComponentActivity() {
         }
         dialog.setOnDismissListener { setKaraoke(false); if (fullScreen === dialog) fullScreen = null }
         dialog.findViewById<Button>(R.id.full_favorite).setOnClickListener { toggleFavorite() }
+        dialog.findViewById<Button>(R.id.full_shuffle).setOnClickListener { shuffleRadio() }
         dialog.findViewById<Button>(R.id.full_karaoke).setOnClickListener { setKaraoke(!karaokeActive) }
         dialog.findViewById<Button>(R.id.full_close).setOnClickListener { dialog.dismiss() }
         val fullLyric = dialog.findViewById<TextView>(R.id.full_lyric)

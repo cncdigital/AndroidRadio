@@ -65,6 +65,10 @@
                 android:layout_height="56dp" android:text="@string/radio_next"
                 android:contentDescription="@string/radio_next" />
         </LinearLayout>
+        <Button android:id="@+id/radio_shuffle" android:layout_width="match_parent"
+            android:layout_height="48dp" android:layout_marginTop="8dp"
+            android:backgroundTint="@color/sntss_gold" android:text="@string/radio_shuffle"
+            android:contentDescription="@string/radio_shuffle_desc" />
         <Button android:id="@+id/radio_favorite" android:layout_width="match_parent"
             android:layout_height="48dp" android:text="♡ Favorito" android:contentDescription="Guardar canción favorita" />
         <Button android:id="@+id/radio_tastes" android:layout_width="match_parent"
