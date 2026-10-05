@@ -100,6 +100,25 @@ class RadioPlaybackService : MediaLibraryService() {
     private lateinit var musicListener: Player.Listener
 
     private val karaokeCommand = SessionCommand("radio.karaoke.toggle", Bundle.EMPTY)
+    private val shuffleCommand = SessionCommand("radio.queue.shuffle", Bundle.EMPTY)
+    private fun shuffleButton() = CommandButton.Builder(CommandButton.ICON_SHUFFLE_ON)
+        .setDisplayName("Aleatorio")
+        .setSessionCommand(shuffleCommand)
+        .setSlots(CommandButton.SLOT_OVERFLOW)
+        .build()
+
+    private fun shuffleUpcomingSongs() {
+        val start = player.currentMediaItemIndex + 1
+        if (start < 0 || start >= player.mediaItemCount) return
+        val tail = (start until player.mediaItemCount).map { player.getMediaItemAt(it) }
+        val reordered = RadioShuffle.upcoming(tail)
+        if (reordered == tail) return
+        val current = player.currentMediaItem?.takeIf { it.mediaId.startsWith("song:") }
+        val orderedMusic = listOfNotNull(current) + reordered.filter { it.mediaId.startsWith("song:") }
+        val included = orderedMusic.map { it.mediaId }.toSet()
+        songs = orderedMusic + songs.filter { it.mediaId !in included }
+        player.replaceMediaItems(start, player.mediaItemCount, reordered)
+    }
     private fun karaokeButton() = CommandButton.Builder(CommandButton.ICON_SETTINGS)
         .setDisplayName(if (karaokeActive) "Apagar karaoke" else "Karaoke · reducir voz")
         .setSessionCommand(karaokeCommand)
@@ -153,6 +172,7 @@ class RadioPlaybackService : MediaLibraryService() {
             .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
             .setSlots(CommandButton.SLOT_FORWARD)
             .build(),
+        shuffleButton(),
         karaokeButton(),
     )
 
@@ -168,10 +188,14 @@ class RadioPlaybackService : MediaLibraryService() {
             val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailablePlayerCommands(RadioPlaybackActions.externalCommands())
                 .setMediaButtonPreferences(if (automotive) automotiveButtons() else automotiveButtons().take(2))
-                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(karaokeCommand).build())
+                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(karaokeCommand).add(shuffleCommand).build())
             return result.build()
         }
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+            if (command.customAction == shuffleCommand.customAction) {
+                shuffleUpcomingSongs()
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             if (command.customAction != karaokeCommand.customAction) return super.onCustomCommand(session, controller, command, args)
             setKaraoke(!karaokeActive)
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
