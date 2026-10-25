@@ -18,6 +18,7 @@ internal object RadioCatalog {
     const val ORIGIN = "https://sntss1puebla.com"
     const val ROOT_ID = "radio-root"
     const val SONGS_ID = "radio-songs"
+    private val snapshotLock = Any()
 
     fun loadSongs(preferredQuality: Int? = null): List<MediaItem> = loadProgram(preferredQuality).songs
 
@@ -39,15 +40,19 @@ internal object RadioCatalog {
                 if (connection.responseCode != HttpURLConnection.HTTP_OK) throw java.io.IOException("Radio catalog unavailable")
                 val downloaded = connection.inputStream.bufferedReader().use { it.readTextLimited(8_000_000) }
                 JSONObject(downloaded) // Never replace the offline catalog with malformed data.
-                snapshot?.let { file ->
+                synchronized(snapshotLock) { snapshot?.let { file ->
                     val atomic = android.util.AtomicFile(file)
                     var output: java.io.FileOutputStream? = null
                     try { output = atomic.startWrite(); output.write(downloaded.toByteArray(Charsets.UTF_8)); atomic.finishWrite(output) }
                     catch (_: Exception) { atomic.failWrite(output) }
-                }
+                } }
                 downloaded
             } catch (error: Exception) {
-                snapshot?.takeIf { it.exists() && it.length() <= 8_000_000 }?.readText() ?: throw error
+                synchronized(snapshotLock) {
+                    snapshot?.takeIf { it.exists() && it.length() <= 8_000_000 }?.let {
+                        android.util.AtomicFile(it).openRead().bufferedReader().use { reader -> reader.readTextLimited(8_000_000) }
+                    }
+                } ?: throw error
             }
             val data = JSONObject(body)
             fun playlist(key: String, commercial: Boolean): List<MediaItem> {

@@ -603,7 +603,9 @@ class RadioPlaybackService : MediaLibraryService() {
             if (player.mediaItemCount > 0 && player.currentMediaItem?.mediaId?.startsWith("song:") == true) {
                 val current = player.currentMediaItem ?: return@post
                 val currentIndex = player.currentMediaItemIndex
-                val tail = ordered.dropWhile { it.mediaId != current.mediaId }.drop(1) + ordered.takeWhile { it.mediaId != current.mediaId }
+                val newcomers = ordered.filter { it.mediaId !in existing && it.mediaId != current.mediaId }
+                val rotated = ordered.dropWhile { it.mediaId != current.mediaId }.drop(1) + ordered.takeWhile { it.mediaId != current.mediaId }
+                val tail = newcomers + rotated.filter { it.mediaId in existing && it.mediaId != current.mediaId }
                 player.replaceMediaItems(currentIndex + 1, player.mediaItemCount, tail)
             }
         }
