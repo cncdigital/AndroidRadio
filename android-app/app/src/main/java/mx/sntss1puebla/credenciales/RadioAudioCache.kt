@@ -11,9 +11,10 @@ import java.io.File
 
 /** One process-wide owner shared by playback and background prefetch. */
 internal object RadioAudioCache {
-    const val CAPACITY = 1024L * 1024L * 1024L
+    const val CAPACITY = 10L * 1024L * 1024L * 1024L
     @Volatile private var instance: SimpleCache? = null
     @Synchronized fun get(context: Context): SimpleCache = instance ?: SimpleCache(
+        // Preserve the directory so updating the limit retains existing cached songs.
         File(context.applicationContext.noBackupFilesDir, "radio-audio-1gb"),
         LeastRecentlyUsedCacheEvictor(CAPACITY), StandaloneDatabaseProvider(context.applicationContext),
     ).also { instance = it }

@@ -42,7 +42,7 @@ class RadioCacheWorker(context: Context, parameters: WorkerParameters) : Worker(
             var failed = false
             for (song in songs) {
                 if (isStopped || !wifiAllowed(context)) break
-                // A 1 GiB capacity, filled progressively when storage and the catalog allow it.
+                // A 10 GiB capacity, filled progressively when storage and the catalog allow it.
                 if (cache.cacheSpace >= RadioAudioCache.CAPACITY - 16L * 1024L * 1024L || context.noBackupFilesDir.usableSpace < 256L * 1024L * 1024L) break
                 val config = song.localConfiguration ?: continue
                 val key = config.customCacheKey ?: continue

@@ -456,7 +456,7 @@ class MainActivity : ComponentActivity() {
         val player = browser
         updateFavoriteButtons()
         findViewById<TextView>(R.id.radio_cache_status)?.text =
-            "Caché: ${RadioAudioCache.get(this).cacheSpace / (1024 * 1024)} / 1024 MiB · " +
+            "Caché: ${RadioAudioCache.get(this).cacheSpace / (1024 * 1024)} / ${RadioAudioCache.CAPACITY / (1024 * 1024)} MiB · " +
             if (RadioCacheWorker.wifiAllowed(this)) "Wi-Fi: precarga automática" else "Precarga esperando Wi-Fi"
         val item = player?.currentMediaItem
         title.text = item?.mediaMetadata?.title ?: getString(R.string.radio_title)

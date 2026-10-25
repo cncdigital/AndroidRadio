@@ -32,7 +32,7 @@ class RadioAudioCacheTest {
             assertEquals(key, selected.localConfiguration?.customCacheKey)
             assertEquals("192", selected.localConfiguration?.uri?.getQueryParameter("quality"))
             assertFalse(RadioAudioCache.complete(context, "song:999999999:1234:320"))
-            assertEquals(1024L * 1024 * 1024, RadioAudioCache.CAPACITY)
+            assertEquals(10L * 1024 * 1024 * 1024, RadioAudioCache.CAPACITY)
         } finally { cache.removeResource(key) }
     }
 }
