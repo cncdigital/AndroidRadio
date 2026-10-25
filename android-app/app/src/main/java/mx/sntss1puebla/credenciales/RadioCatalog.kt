@@ -32,7 +32,7 @@ internal object RadioCatalog {
         return try {
             val snapshot = context?.let { java.io.File(it.noBackupFilesDir, "radio-catalog.json") }
             val connectivity = context?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            val offline = context != null && connectivity?.getNetworkCapabilities(connectivity.activeNetwork)
+            val offline = context != null && connectivity?.let { it.getNetworkCapabilities(it.activeNetwork) }
                 ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) != true
             val body = try {
                 if (offline) throw java.io.IOException("Offline catalog")
@@ -79,9 +79,8 @@ internal object RadioCatalog {
                                 ?: Uri.parse("android.resource://mx.sntss1puebla.credenciales/drawable/ic_radio"))
                             .setIsPlayable(true)
                             .setIsBrowsable(false)
-                            .build().let { item -> if (context != null) RadioAudioCache.preferCached(context, item) else item }
-                    if (!offline || (context != null && item.localConfiguration?.customCacheKey?.let { RadioAudioCache.complete(context, it) } == true)) add(item)
-                        .build().let { item -> if (context != null) RadioAudioCache.preferCached(context, item) else item }
+                            .build())
+                        .build().let { candidate -> if (context != null) RadioAudioCache.preferCached(context, candidate) else candidate }
                     if (!offline || (context != null && item.localConfiguration?.customCacheKey?.let { RadioAudioCache.complete(context, it) } == true)) add(item)
                 }
               }
