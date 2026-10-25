@@ -100,6 +100,7 @@ class RadioPlaybackService : MediaLibraryService() {
     private lateinit var musicListener: Player.Listener
 
     private val karaokeCommand = SessionCommand("radio.karaoke.toggle", Bundle.EMPTY)
+    private val favoriteCommand = SessionCommand("radio.favorite.toggle", Bundle.EMPTY)
     private val shuffleCommand = SessionCommand("radio.queue.shuffle", Bundle.EMPTY)
     private fun shuffleButton() = CommandButton.Builder(CommandButton.ICON_SHUFFLE_ON)
         .setDisplayName("Aleatorio")
@@ -111,7 +112,8 @@ class RadioPlaybackService : MediaLibraryService() {
         val start = player.currentMediaItemIndex + 1
         if (start < 0 || start >= player.mediaItemCount) return
         val tail = (start until player.mediaItemCount).map { player.getMediaItemAt(it) }
-        val reordered = RadioShuffle.upcoming(tail)
+        val ordered = RadioPreferences.order(this, tail.filter { it.mediaId.startsWith("song:") }, player.currentMediaItem?.mediaId).iterator()
+        val reordered = tail.map { if (it.mediaId.startsWith("song:")) ordered.next() else it }
         if (reordered == tail) return
         val current = player.currentMediaItem?.takeIf { it.mediaId.startsWith("song:") }
         val orderedMusic = listOfNotNull(current) + reordered.filter { it.mediaId.startsWith("song:") }
@@ -161,6 +163,19 @@ class RadioPlaybackService : MediaLibraryService() {
         }
     }
 
+    private fun favoriteButton(): CommandButton {
+        val current = player.currentMediaItem
+        val favorite = current != null && RadioPreferences.isFavorite(this, current.mediaId)
+        return CommandButton.Builder(if (favorite) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED)
+            .setDisplayName(if (favorite) "Quitar de favoritos" else "Guardar favorito")
+            .setSessionCommand(favoriteCommand).setSlots(CommandButton.SLOT_OVERFLOW)
+            .setEnabled(current?.mediaId?.startsWith("song:") == true).build()
+    }
+    private fun refreshButtons() {
+        if (!::librarySession.isInitialized) return
+        librarySession.setMediaButtonPreferences(automotiveButtons())
+        librarySession.setCustomLayout(listOf(favoriteButton(), shuffleButton(), karaokeButton()))
+    }
     private fun automotiveButtons(): List<CommandButton> = listOf(
         CommandButton.Builder(CommandButton.ICON_PREVIOUS)
             .setDisplayName("Canción anterior")
@@ -172,6 +187,7 @@ class RadioPlaybackService : MediaLibraryService() {
             .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
             .setSlots(CommandButton.SLOT_FORWARD)
             .build(),
+        favoriteButton(),
         shuffleButton(),
         karaokeButton(),
     )
@@ -186,16 +202,30 @@ class RadioPlaybackService : MediaLibraryService() {
             if (!automotive && !notification) {
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                     .setAvailablePlayerCommands(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS)
-                    .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(shuffleCommand).build())
+                    .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(shuffleCommand).add(favoriteCommand).build())
                     .build()
             }
             val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                 .setAvailablePlayerCommands(RadioPlaybackActions.externalCommands())
-                .setMediaButtonPreferences(if (automotive) automotiveButtons() else automotiveButtons().take(2))
-                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(karaokeCommand).add(shuffleCommand).build())
+                .setMediaButtonPreferences(automotiveButtons())
+                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(karaokeCommand).add(shuffleCommand).add(favoriteCommand).build())
             return result.build()
         }
+        override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            if (controller.isTrusted && (session.isAutoCompanionController(controller) || session.isAutomotiveController(controller))) {
+                shuffleUpcomingSongs()
+                refreshButtons()
+            }
+        }
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+            if (command.customAction == favoriteCommand.customAction) {
+                player.currentMediaItem?.takeIf { it.mediaId.startsWith("song:") }?.let {
+                    RadioPreferences.toggleSong(this@RadioPlaybackService, it.mediaId)
+                    applyTastes()
+                    refreshButtons()
+                }
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             if (command.customAction == shuffleCommand.customAction) {
                 shuffleUpcomingSongs()
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -311,11 +341,8 @@ class RadioPlaybackService : MediaLibraryService() {
         httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(false)
             .setUserAgent("SNTSS1Puebla-Radio-Android/1.0")
-        audioCache = SimpleCache(
-            File(cacheDir, "radio-audio-cache"),
-            LeastRecentlyUsedCacheEvictor(250L * 1024L * 1024L),
-            StandaloneDatabaseProvider(this),
-        )
+        audioCache = RadioAudioCache.get(this)
+        RadioCacheWorker.schedule(this)
         val upstreamFactory = DefaultDataSource.Factory(this, httpFactory)
         cacheFactory = CacheDataSource.Factory()
             .setCache(audioCache)
@@ -369,6 +396,7 @@ class RadioPlaybackService : MediaLibraryService() {
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 karaokeProcessor.enabled = karaokeActive && item?.mediaId?.startsWith("song:") == true
                 finishAnnouncement()
+                mainHandler.post { refreshButtons() }
                 if (tastesPending && item?.mediaId?.startsWith("song:") == true) mainHandler.post { applyTastes() }
                 val previous = lastMediaId
                 lastMediaId = item?.mediaId
@@ -467,7 +495,7 @@ class RadioPlaybackService : MediaLibraryService() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (intent?.action == ACTION_UPDATE_TASTES) applyTastes()
+        if (intent?.action == ACTION_UPDATE_TASTES) { applyTastes(); refreshButtons() }
         if (intent?.action == ACTION_SET_KARAOKE) {
             setKaraoke(intent.getBooleanExtra("enabled", false))
         }
@@ -554,15 +582,15 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private fun refreshCatalog() {
-        val program = RadioCatalog.loadProgram(RadioCatalog.qualityFor(this))
+        val program = RadioCatalog.loadProgram(RadioCatalog.qualityFor(this), this)
         if (program.songs.isEmpty() && songs.isNotEmpty()) return
         val previousFirst = getSharedPreferences("radio", MODE_PRIVATE).getString("first", null)
         val existing = songs.map { it.mediaId }.toSet()
         val ordered = if (existing.isEmpty()) RadioPreferences.order(this, program.songs, previousFirst).let { shuffled ->
             if (shuffled.size > 1 && shuffled.first().mediaId == previousFirst)
                 shuffled.toMutableList().apply { add(0, removeAt(1)) } else shuffled
-        } else songs.mapNotNull { prior -> program.songs.find { it.mediaId == prior.mediaId } } +
-            RadioPreferences.order(this, program.songs.filter { it.mediaId !in existing })
+        } else RadioPreferences.order(this, program.songs.filter { it.mediaId !in existing }) +
+            songs.mapNotNull { prior -> program.songs.find { it.mediaId == prior.mediaId } }
         songs = ordered
         if (existing.isEmpty()) ordered.firstOrNull()?.let { getSharedPreferences("radio", MODE_PRIVATE).edit().putString("first", it.mediaId).apply() }
         mainHandler.post {
@@ -615,7 +643,7 @@ class RadioPlaybackService : MediaLibraryService() {
         finishAnnouncement()
         voicePlayer.release()
         player.release()
-        audioCache.release()
+        // Cache is process-wide: WorkManager may still be writing after playback stops.
         catalogExecutor.shutdownNow()
         super.onDestroy()
     }

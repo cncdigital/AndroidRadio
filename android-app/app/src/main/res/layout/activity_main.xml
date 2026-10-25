@@ -40,6 +40,10 @@
             android:layout_height="wrap_content" android:layout_marginTop="6dp"
             android:gravity="center" android:text="@string/radio_subtitle"
             android:textColor="#CADCE9" android:textSize="16sp" />
+        <TextView android:id="@+id/radio_cache_status" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="8dp"
+            android:gravity="center" android:textColor="#CADCE9" android:textSize="13sp"
+            android:text="Caché musical · 1 GiB · precarga automática con Wi-Fi" />
         <SeekBar android:id="@+id/song_seek" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="30dp"
             android:progressTint="@color/sntss_gold" android:thumbTint="@color/sntss_gold" />
