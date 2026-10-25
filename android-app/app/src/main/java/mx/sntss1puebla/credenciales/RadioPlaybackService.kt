@@ -213,6 +213,9 @@ class RadioPlaybackService : MediaLibraryService() {
         }
         override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
             if (controller.isTrusted && (session.isAutoCompanionController(controller) || session.isAutomotiveController(controller))) {
+                // The queue is already a weighted random permutation; native shuffle
+                // would discard the new-song weights and may move ad slots.
+                player.shuffleModeEnabled = false
                 shuffleUpcomingSongs()
                 refreshButtons()
             }
