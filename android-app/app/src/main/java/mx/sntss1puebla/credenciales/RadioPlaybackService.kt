@@ -329,7 +329,13 @@ class RadioPlaybackService : MediaLibraryService() {
             val result = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
             loaded.addListener({
                 try {
-                    val queue = RadioQueueResolver.resolve(mediaItems, startIndex, loaded.get())
+                    val catalog = loaded.get()
+                    val resolved = RadioQueueResolver.resolve(mediaItems, startIndex, catalog)
+                    val queue = if (mediaSession.isAutoCompanionController(browser) || mediaSession.isAutomotiveController(browser)) {
+                        val selected = resolved.mediaItems.getOrNull(resolved.startIndex)
+                        RadioQueueResolution(listOfNotNull(selected) + RadioPreferences.order(this@RadioPlaybackService,
+                            catalog.filter { it.mediaId != selected?.mediaId }, selected?.mediaId), 0)
+                    } else resolved
                     result.set(MediaSession.MediaItemsWithStartPosition(queue.mediaItems, queue.startIndex, startPositionMs))
                 } catch (error: Exception) {
                     result.setException(error)
