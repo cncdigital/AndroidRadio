@@ -18,10 +18,11 @@ internal object RadioCatalog {
     const val ORIGIN = "https://sntss1puebla.com"
     const val ROOT_ID = "radio-root"
     const val SONGS_ID = "radio-songs"
+    private val snapshotLock = Any()
 
     fun loadSongs(preferredQuality: Int? = null): List<MediaItem> = loadProgram(preferredQuality).songs
 
-    fun loadProgram(preferredQuality: Int? = null): Program {
+    fun loadProgram(preferredQuality: Int? = null, context: Context? = null): Program {
         val connection = (URL("$ORIGIN/api/radio/catalog").openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 5_000
@@ -30,9 +31,29 @@ internal object RadioCatalog {
             setRequestProperty("Accept", "application/json")
         }
         return try {
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) throw java.io.IOException("Radio catalog unavailable")
-            // A bounded response avoids retaining a potentially large library in the car service.
-            val body = connection.inputStream.bufferedReader().use { it.readTextLimited(8_000_000) }
+            val snapshot = context?.let { java.io.File(it.noBackupFilesDir, "radio-catalog.json") }
+            val connectivity = context?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val offline = context != null && connectivity?.let { it.getNetworkCapabilities(it.activeNetwork) }
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) != true
+            val body = try {
+                if (offline) throw java.io.IOException("Offline catalog")
+                if (connection.responseCode != HttpURLConnection.HTTP_OK) throw java.io.IOException("Radio catalog unavailable")
+                val downloaded = connection.inputStream.bufferedReader().use { it.readTextLimited(8_000_000) }
+                JSONObject(downloaded) // Never replace the offline catalog with malformed data.
+                synchronized(snapshotLock) { snapshot?.let { file ->
+                    val atomic = android.util.AtomicFile(file)
+                    var output: java.io.FileOutputStream? = null
+                    try { output = atomic.startWrite(); output.write(downloaded.toByteArray(Charsets.UTF_8)); atomic.finishWrite(output) }
+                    catch (_: Exception) { atomic.failWrite(output) }
+                } }
+                downloaded
+            } catch (error: Exception) {
+                synchronized(snapshotLock) {
+                    snapshot?.takeIf { it.exists() && it.length() <= 8_000_000 }?.let {
+                        android.util.AtomicFile(it).openRead().bufferedReader().use { reader -> reader.readTextLimited(8_000_000) }
+                    }
+                } ?: throw error
+            }
             val data = JSONObject(body)
             fun playlist(key: String, commercial: Boolean): List<MediaItem> {
               val tracks = data.optJSONArray(key) ?: return emptyList()
@@ -48,7 +69,7 @@ internal object RadioCatalog {
                         ?: available.sorted().lastOrNull { it <= 192 } ?: 320
                     val preferred = if (selected == 320) "" else "?quality=$selected"
                     val cover = if (commercial) null else track.optString("coverUrl").takeIf { it.startsWith("/api/radio/cover/") }
-                    add(MediaItem.Builder()
+                    val item = MediaItem.Builder()
                         .setMediaId("${if (commercial) "commercial" else "song"}:$id")
                         .setUri("$ORIGIN/api/radio/${if (commercial) "commercial" else "audio"}/$id${if (commercial) "" else preferred}")
                         .setMimeType(MimeTypes.AUDIO_MPEG)
@@ -64,7 +85,8 @@ internal object RadioCatalog {
                             .setIsPlayable(true)
                             .setIsBrowsable(false)
                             .build())
-                        .build())
+                        .build().let { candidate -> if (context != null) RadioAudioCache.preferCached(context, candidate) else candidate }
+                    if (!offline || (context != null && item.localConfiguration?.customCacheKey?.let { RadioAudioCache.complete(context, it) } == true)) add(item)
                 }
               }
             }

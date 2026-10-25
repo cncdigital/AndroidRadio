@@ -140,6 +140,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        RadioCacheWorker.schedule(this)
         setContentView(R.layout.activity_main)
         title = findViewById(R.id.song_title)
         artist = findViewById(R.id.song_artist)
@@ -454,6 +455,9 @@ class MainActivity : ComponentActivity() {
     private fun render() {
         val player = browser
         updateFavoriteButtons()
+        findViewById<TextView>(R.id.radio_cache_status)?.text =
+            "Caché: ${RadioAudioCache.get(this).cacheSpace / (1024 * 1024)} / 1024 MiB · " +
+            if (RadioCacheWorker.wifiAllowed(this)) "Wi-Fi: precarga automática" else "Precarga esperando Wi-Fi"
         val item = player?.currentMediaItem
         title.text = item?.mediaMetadata?.title ?: getString(R.string.radio_title)
         artist.text = item?.mediaMetadata?.artist ?: getString(R.string.radio_subtitle)
