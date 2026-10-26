@@ -414,7 +414,6 @@ class RadioPlaybackService : MediaLibraryService() {
                     RadioPreferences.recordCompleted(this@RadioPlaybackService, previous)
                 }
                 if (item?.mediaId?.startsWith("song:") == true && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && previous != item.mediaId) {
-                    pendingIntroduction = true
                     mainHandler.post { if (player.currentMediaItem?.mediaId == item.mediaId) announceIfDue(item) }
                 }
                 if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || item == null) return
@@ -435,8 +434,8 @@ class RadioPlaybackService : MediaLibraryService() {
                 elapsedMusicMs += lastSongPositionMs.coerceAtLeast(0)
                 lastSongPositionMs = 0
                 completedSongs += 1
-                pendingIntroduction = completedSongs % 2 == 0
-                pendingFact = completedSongs % 5 == 0
+                pendingIntroduction = completedSongs % 3 == 0
+                pendingFact = completedSongs % 3 == 0
                 if (!pendingIntroduction && !pendingFact) {
                     val capsuleTrackId = item.mediaId.removePrefix("song:").toIntOrNull()
                     if (capsuleTrackId != null) catalogExecutor.execute { prewarmCapsule(capsuleTrackId, completedSongs % 16) }

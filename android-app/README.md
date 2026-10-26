@@ -47,7 +47,7 @@ Con karaoke apagado se usa el renderer y salida de audio estándar de ExoPlayer.
 
 Sin gustos seleccionados, se priorizan canciones menos escuchadas en este dispositivo, y entre ellas las más recientemente agregadas. Solo las reproducciones completas suman al historial local; los comerciales y saltos no se contabilizan. No se envían estadísticas personales. Se conserva la selección explícita de favoritos.
 
-## Android Auto, favoritos y caché Wi-Fi (0.10.26)
+## Android Auto, favoritos y caché Wi-Fi (0.10.27)
 
 Al conectar Android Auto se mezcla la cola siguiente conservando la canción en curso. Las canciones subidas en los últimos 14 días tienen prioridad adicional en la selección aleatoria, incluso cuando existen favoritos, sin excluir las demás ni duplicarlas en cada vuelta. Los temas nuevos detectados al refrescar entran delante de la cola pendiente.
 
@@ -55,4 +55,6 @@ La sesión expone Guardar/Quitar favorito con un corazón como primera acción a
 
 El audio comparte una caché LRU de **10 GiB (10240 MiB)** entre reproducción y WorkManager. Se muestra el espacio utilizado en el teléfono. El llenado progresivo se programa al abrir la app o iniciar el servicio y se reintenta periódicamente en segundo plano. Solo precarga con Wi-Fi validado, no medido y espacio libre suficiente; se pausa si cambian esas condiciones. Prioriza canciones nuevas y favoritas, elige 192 kbps cuando existe y aprovecha cualquier calidad completa ya guardada para evitar volver a descargar en datos móviles. Conserva el último catálogo y ofrece las canciones completamente almacenadas cuando no hay conexión. La ocupación real depende del catálogo y del espacio libre; 10 GiB es la capacidad máxima reservada al comportamiento LRU, no una descarga inmediata garantizada. Las restricciones de batería y tareas de Android pueden diferir las precargas.
 
-La versión 0.10.26 amplía la capacidad de 1 a 10 GiB conservando los archivos ya guardados. El indicador toma el límite directamente de la configuración de caché.
+La versión 0.10.27 amplía la capacidad de 1 a 10 GiB conservando los archivos ya guardados. El indicador toma el límite directamente de la configuración de caché.
+
+Las cápsulas de voz se reproducen después de cada tres canciones completas, sin cápsula inicial por seleccionar una canción.
