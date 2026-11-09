@@ -26,8 +26,14 @@ class RadioVisualBackgroundTest {
         assertTrue(frame.indexOfChild(lyric) > frame.indexOfChild(normal.findViewById(R.id.radio_visualizer)))
         val full = LayoutInflater.from(context).inflate(R.layout.dialog_radio_fullscreen, null) as android.widget.FrameLayout
         assertTrue(full.indexOfChild(full.findViewById(R.id.full_lyric)) > full.indexOfChild(full.findViewById(R.id.full_artwork)))
-        assertNotNull(normal.findViewById<View>(R.id.radio_background))
-        assertNotNull(full.findViewById<View>(R.id.full_background))
+        assertEquals(0, context.resources.getIdentifier("radio_background", "id", context.packageName))
+        assertEquals(0, context.resources.getIdentifier("full_background", "id", context.packageName))
+        assertSame(full, full.findViewById<View>(R.id.full_lyric).parent)
+        assertNotSame(full.findViewById<View>(R.id.full_controls), full.findViewById<View>(R.id.full_lyric).parent)
+        for (id in listOf(R.id.previous_song, R.id.play_native_radio, R.id.next_song)) {
+            assertEquals(View.VISIBLE, normal.findViewById<View>(id).visibility)
+            assertEquals(1f, normal.findViewById<View>(id).alpha, 0f)
+        }
     }
 
     @Test fun repeatedSwipesDoNotChangeLyricAndCancelDoesNotChooseBackground() = instrumentation.runOnMainSync {
@@ -37,7 +43,9 @@ class RadioVisualBackgroundTest {
         frame.addView(lyric)
         var style = RadioVisualStyle.COVER
         var changes = 0
+        var taps = 0
         frame.onBackgroundSwipe = { style = style.shifted(it); changes++ }
+        frame.setOnClickListener { taps++ }
         val distance = 120f * context.resources.displayMetrics.density
         fun event(action: Int, x: Float, y: Float = 20f) {
             val touch = MotionEvent.obtain(100, 120, action, x, y, 0)
@@ -51,7 +59,17 @@ class RadioVisualBackgroundTest {
         }
         assertEquals(6, changes)
         assertEquals(RadioVisualStyle.COVER, style)
+        assertEquals(0, taps)
         assertEquals("La letra sigue aquí", lyric.text.toString())
+        event(MotionEvent.ACTION_DOWN, 20f)
+        event(MotionEvent.ACTION_UP, 20f)
+        assertEquals(1, taps)
+        // Returning to the starting point after a drag must not become a tap.
+        event(MotionEvent.ACTION_DOWN, 20f)
+        event(MotionEvent.ACTION_MOVE, distance)
+        event(MotionEvent.ACTION_UP, 20f)
+        assertEquals(1, taps)
+        assertEquals(6, changes)
         event(MotionEvent.ACTION_DOWN, distance + 20f)
         event(MotionEvent.ACTION_MOVE, 20f)
         event(MotionEvent.ACTION_CANCEL, 20f)

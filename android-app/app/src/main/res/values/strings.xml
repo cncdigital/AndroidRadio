@@ -31,8 +31,11 @@
     <string name="radio_visual_tunnel">Túnel</string>
     <string name="radio_visual_aurora">Aurora</string>
     <string name="radio_visual_stars">Estrellas</string>
-    <string name="radio_visual_choose">Elegir fondo</string>
     <string name="radio_visual_label">Fondo: %1$s · %2$d/%3$d</string>
-    <string name="radio_visual_accessibility">%1$s. Toca para elegir otro fondo.</string>
-    <string name="radio_visual_hint">Desliza la portada a izquierda o derecha para cambiar el fondo. La letra permanece visible.</string>
+    <string name="radio_visual_accessibility">%1$s. Acciones disponibles: fondo anterior y fondo siguiente.</string>
+    <string name="radio_visual_full_accessibility">%1$s. Toca para mostrar los controles. Acciones disponibles: fondo anterior y fondo siguiente.</string>
+    <string name="radio_visual_previous">Fondo anterior</string>
+    <string name="radio_visual_next">Fondo siguiente</string>
+    <string name="radio_show_controls">Mostrar controles</string>
+    <string name="radio_visual_hint">Desliza la portada a izquierda o derecha para cambiar el fondo. Al maximizar, toca la portada para mostrar los controles. La letra permanece visible.</string>
 </resources>

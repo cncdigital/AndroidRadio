@@ -1,30 +1,23 @@
-# Radio Sindical 0.10.29 · candidata reactiva
+# Radio Sindical 0.10.30 · controles discretos
 
-Base: `cncdigital/AndroidRadio` y candidata de revisión `dfab37b397e8cbadffc48a50d1b1bb70776f4dd7` (0.10.28). La candidata utiliza `versionCode 39` y conserva el paquete `mx.sntss1puebla.credenciales`.
+Base de revisión: `e28a36d52c6bdc38ba4084159ac4e1d9794305dd` (0.10.29). La candidata usa `versionCode 40` y conserva `mx.sntss1puebla.credenciales` y la firma permanente.
 
-## Alcance
+## Cambio solicitado
 
-La visualización usa energía y frecuencias del PCM real de la música, sin micrófono ni permisos adicionales. Conserva letras, karaoke y efectos opcionales. El silencio no produce un ritmo simulado.
+- Eliminar los botones de selección de fondos y conservar deslizamientos izquierda/derecha.
+- En pantalla completa, desvanecer los controles tras inactividad y recuperarlos al tocar, sin desvanecer ni ocultar la letra.
+- Mantener controles accesibles, interacción segura con controles ocultos y limpieza de temporizadores al cerrar o pausar la interfaz.
+- Conservar el análisis PCM reactivo y el audio existente sin modificaciones.
 
-## Verificación y recuperación
+## Verificación
 
-La implementación anterior a la recuperación pasó 41 pruebas JVM, compiló ambos APKs de depuración y redujo los errores de lint de 104 a 93 sin añadir errores. El entorno que contenía esos archivos se sustituyó. Se recuperaron la base desde GitHub y las ediciones desde sus comandos conservados. Esos resultados anteriores no certifican por sí solos la copia recuperada.
+La base 0.10.29 pasó 41 pruebas JVM debug, 41 release y 17 instrumentadas Android 15. Esos resultados no certifican esta modificación de interfaz.
 
-El workflow de revisión vuelve a ejecutar las pruebas JVM y las compilaciones debug/release, verifica la firma permanente y versión, y ejecuta las pruebas instrumentadas en Android API 35. Los resultados de la ejecución correspondiente al commit son la comprobación vigente. La APK se conserva sólo si pasan las pruebas instrumentadas.
+El workflow de esta candidata vuelve a compilar debug y release, ejecutar unitarias, comprobar firma/versión y ejecutar instrumentadas en emulador API35. Los resultados del run correspondiente al commit son la comprobación vigente. La APK sólo se conserva si las pruebas instrumentadas pasan. El acceso temporal a KVM está limitado al intento autorizado y la ACL se restaura al terminar.
 
-La autorización de KVM está limitada a la ejecución 2, intento 1: acceso temporal a `/dev/kvm` sólo para el usuario runner y restauración de su ACL original al finalizar. No hay cambios a `main`, a la rama de descargas `apk` ni releases.
+## Límites y distribución
 
-## Cobertura
-
-- PCM sin modificación, energía/pico, frecuencia, antifase, silencio, reloj, caducidad, historial acotado y tasas de muestreo.
-- Fábrica de audio real: normal/karaoke, pausa, comerciales, búsqueda a silencio/agudos y cambio de pista.
-- Gestos, desplazamiento vertical, capas de letras y dibujo reactivo.
-
-## Límites antes de distribución general
-
-- El emulador no sustituye la escucha y prueba en teléfono con altavoz, auriculares y Bluetooth, ni la verificación de Android Auto en el vehículo.
-- La reacción usa PCM previo al volumen, ducking y efectos del dispositivo. La latencia adicional de cada salida Bluetooth no está garantizada.
-- La lectura de PCM desactiva passthrough/offload de música. FFT se ejecuta sólo con un fondo visible, reproducción activa y movimiento permitido.
-- Una prueba automática no certifica mejora audible, capacidad del hardware ni ausencia absoluta de distorsión.
-- Lint global sigue pendiente por errores previos de Media3 y un filtro de búsqueda de Android Auto ausente.
-- El workflow de `main` publica automáticamente. Mantener la revisión separada hasta autorizar publicación y distribución.
+- La verificación en emulador no sustituye uso en teléfono, escucha Bluetooth ni prueba de Android Auto en vehículo.
+- Fondos estáticos con silencio, pausa, ahorro de batería o movimiento reducido; sin micrófono ni permiso RECORD_AUDIO.
+- Lint global no se declara aprobado por problemas anteriores de opt-in Media3 y filtro de búsqueda Android Auto.
+- El PR permanece en borrador. No publicar, fusionar a main, actualizar la rama apk ni crear releases sin autorización.

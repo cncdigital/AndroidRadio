@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
     private var visualStyle = RadioVisualStyle.COVER
     private lateinit var visualizer: RadioVisualizerView
     private var fullScreen: Dialog? = null
+    private var fullScreenControls: RadioFullscreenControls? = null
     private var coverBitmap: Bitmap? = null
     private var currentGhost = ""
     private val lyricExecutor = Executors.newSingleThreadExecutor()
@@ -165,7 +166,6 @@ class MainActivity : ComponentActivity() {
         visualizer = findViewById(R.id.radio_visualizer)
         visualStyle = RadioVisualStyle.fromId(getSharedPreferences("radio_visuals", MODE_PRIVATE).getString("background", null))
         findViewById<RadioArtworkFrame>(R.id.radio_artwork).onBackgroundSwipe = ::changeBackground
-        findViewById<Button>(R.id.radio_background).setOnClickListener { showBackgroundPicker() }
         applyBackground()
         findViewById<Button>(R.id.close_radio).setOnClickListener { closeRadioApp() }
         findViewById<Button>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
@@ -619,20 +619,31 @@ class MainActivity : ComponentActivity() {
         // Android 15+ can draw a full-screen dialog behind the gesture/navigation bar.
         // Keep artwork edge-to-edge while reserving the system insets for the controls.
         dialog.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
-        val fullRoot = dialog.findViewById<FrameLayout>(R.id.full_root)
+        val fullRoot = dialog.findViewById<RadioFullscreenFrame>(R.id.full_root)
+        val controls = RadioFullscreenControls(fullRoot, listOf(
+            dialog.findViewById(R.id.full_controls), dialog.findViewById(R.id.full_close),
+            dialog.findViewById(R.id.full_lyric_move)
+        ))
         ViewCompat.setOnApplyWindowInsetsListener(fullRoot) { view, insets ->
             val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
             insets
         }
         dialog.setOnDismissListener {
+            controls.dispose()
+            if (fullScreenControls === controls) fullScreenControls = null
             dialog.findViewById<RadioVisualizerView>(R.id.full_visualizer).motionActive = false
             setKaraoke(false)
             if (fullScreen === dialog) fullScreen = null
             updateBackgroundMotion()
         }
-        dialog.findViewById<RadioArtworkFrame>(R.id.full_artwork).onBackgroundSwipe = ::changeBackground
-        dialog.findViewById<Button>(R.id.full_background).setOnClickListener { showBackgroundPicker() }
+        dialog.findViewById<RadioArtworkFrame>(R.id.full_artwork).apply {
+            onBackgroundSwipe = { direction ->
+                changeBackground(direction)
+                controls.show()
+            }
+            setOnClickListener { controls.show() }
+        }
         dialog.findViewById<Button>(R.id.full_favorite).setOnClickListener { toggleFavorite() }
         dialog.findViewById<Button>(R.id.full_shuffle).setOnClickListener { shuffleRadio() }
         dialog.findViewById<Button>(R.id.full_karaoke).setOnClickListener { setKaraoke(!karaokeActive) }
@@ -649,7 +660,9 @@ class MainActivity : ComponentActivity() {
             else if (player.isPlaying) player.pause() else resumePlayback(player)
         }
         fullScreen = dialog
+        fullScreenControls = controls
         dialog.show()
+        if (activityVisible) controls.start()
         dialog.window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
         ViewCompat.requestApplyInsets(fullRoot)
         applyBackground()
@@ -667,37 +680,22 @@ class MainActivity : ComponentActivity() {
         applyBackground()
     }
 
-    private fun showBackgroundPicker() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.radio_visual_choose)
-            .setSingleChoiceItems(RadioVisualStyle.entries.map { getString(it.titleRes) }.toTypedArray(), visualStyle.ordinal) { picker, which ->
-                selectBackground(RadioVisualStyle.entries[which])
-                picker.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
     private fun applyBackground() {
         val original = visualStyle == RadioVisualStyle.COVER
         cover.visibility = if (original) View.VISIBLE else View.INVISIBLE
         visualizer.style = visualStyle
         visualizer.visibility = if (original) View.GONE else View.VISIBLE
         val label = getString(R.string.radio_visual_label, getString(visualStyle.titleRes), visualStyle.ordinal + 1, RadioVisualStyle.entries.size)
-        findViewById<Button>(R.id.radio_background).apply {
-            text = label
-            contentDescription = getString(R.string.radio_visual_accessibility, label)
-        }
+        findViewById<RadioArtworkFrame>(R.id.radio_artwork).contentDescription =
+            getString(R.string.radio_visual_accessibility, label)
         fullScreen?.let { dialog ->
             dialog.findViewById<ImageView>(R.id.full_cover).visibility = if (original) View.VISIBLE else View.INVISIBLE
             dialog.findViewById<RadioVisualizerView>(R.id.full_visualizer).apply {
                 style = visualStyle
                 visibility = if (original) View.GONE else View.VISIBLE
             }
-            dialog.findViewById<Button>(R.id.full_background).apply {
-                text = label
-                contentDescription = getString(R.string.radio_visual_accessibility, label)
-            }
+            dialog.findViewById<RadioArtworkFrame>(R.id.full_artwork).contentDescription =
+                getString(R.string.radio_visual_full_accessibility, label)
         }
         // Only backgrounds change. Lyric text, position, karaoke and the audio session are untouched.
         updateBackgroundMotion()
@@ -714,11 +712,13 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         activityVisible = true
+        fullScreenControls?.start()
         updateBackgroundMotion()
     }
 
     override fun onStop() {
         activityVisible = false
+        fullScreenControls?.stop()
         updateBackgroundMotion()
         super.onStop()
     }
@@ -749,6 +749,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        fullScreenControls?.dispose()
+        fullScreenControls = null
         audioDialog?.dismiss()
         fullScreen?.dismiss()
         handler.removeCallbacks(tick)

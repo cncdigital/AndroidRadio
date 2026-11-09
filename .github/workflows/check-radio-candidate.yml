@@ -3,7 +3,7 @@ name: Verificar candidata Radio Sindical
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    paths: ['android-app/**', '.github/workflows/check-radio-candidate.yml']
+    paths: ['android-app/**', '.github/workflows/check-radio-candidate.yml', '.github/scripts/capture-radio-fullscreen.sh']
 
 permissions:
   contents: read
@@ -71,17 +71,17 @@ jobs:
           OUT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK")
           printf '%s\n' "$OUT" | grep -qi 'SHA-256 digest: 89c6a0e71776d62240dd55bdceed9edbe46fe02b7102ae02d6fafae8d0bf642e'
           BADGING=$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK")
-          grep -q "versionCode='39' versionName='0.10.29'" <<< "$BADGING"
-          cp "$APK" "$RUNNER_TEMP/RadioSindical-0.10.29-candidate.apk"
-          sha256sum "$RUNNER_TEMP/RadioSindical-0.10.29-candidate.apk"
-          echo 'Certificado permanente y versión 0.10.29/39 verificados. No se publica la actualización.'
+          grep -q "versionCode='40' versionName='0.10.30'" <<< "$BADGING"
+          cp "$APK" "$RUNNER_TEMP/RadioSindical-0.10.30-candidate.apk"
+          sha256sum "$RUNNER_TEMP/RadioSindical-0.10.30-candidate.apk"
+          echo 'Certificado permanente y versión 0.10.30/40 verificados. No se publica la actualización.'
 
       - name: Habilitar KVM temporalmente para la prueba autorizada
         run: |
           set -euo pipefail
           if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
             # One approved execution only; later runs must not reuse this grant.
-            if [ "$GITHUB_RUN_NUMBER" != 2 ] || [ "$GITHUB_RUN_ATTEMPT" != 1 ]; then
+            if [ "$GITHUB_RUN_NUMBER" != 3 ] || [ "$GITHUB_RUN_ATTEMPT" != 1 ]; then
               echo '::error::Esta ejecución no tiene autorización para cambiar el acceso a KVM.'
               exit 1
             fi
@@ -107,7 +107,7 @@ jobs:
           arch: x86_64
           target: default
           disable-animations: false
-          script: cd "$GITHUB_WORKSPACE/android-app" && gradle connectedDebugAndroidTest --no-daemon --stacktrace
+          script: cd "$GITHUB_WORKSPACE/android-app" && gradle connectedDebugAndroidTest --no-daemon --stacktrace && bash "$GITHUB_WORKSPACE/.github/scripts/capture-radio-fullscreen.sh"
 
       - name: Restaurar acceso original a KVM
         if: always()
@@ -121,8 +121,8 @@ jobs:
       - name: Conservar candidata para revisión
         uses: actions/upload-artifact@v4
         with:
-          name: RadioSindical-0.10.29-signed-candidate
-          path: ${{ runner.temp }}/RadioSindical-0.10.29-candidate.apk
+          name: RadioSindical-0.10.30-signed-candidate
+          path: ${{ runner.temp }}/RadioSindical-0.10.30-candidate.apk
           if-no-files-found: error
           retention-days: 7
 
@@ -130,7 +130,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: RadioSindical-0.10.29-test-results
+          name: RadioSindical-0.10.30-test-results
           path: |
             android-app/app/build/test-results/
             android-app/app/build/outputs/androidTest-results/
