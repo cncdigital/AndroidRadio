@@ -3,9 +3,15 @@
     android:id="@+id/full_root"
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:background="@color/sntss_blue">
+    <mx.sntss1puebla.credenciales.RadioArtworkFrame android:id="@+id/full_artwork"
+        android:layout_width="match_parent" android:layout_height="match_parent">
     <ImageView android:id="@+id/full_cover" android:layout_width="match_parent"
         android:layout_height="match_parent" android:scaleType="fitCenter"
         android:src="@drawable/ic_radio" android:contentDescription="@string/radio_title" />
+    <mx.sntss1puebla.credenciales.RadioVisualizerView android:id="@+id/full_visualizer"
+        android:layout_width="match_parent" android:layout_height="match_parent"
+        android:importantForAccessibility="no" android:visibility="gone" />
+    </mx.sntss1puebla.credenciales.RadioArtworkFrame>
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_gravity="bottom" android:orientation="vertical"
         android:padding="20dp" android:background="#D9071D36">
@@ -50,6 +56,10 @@
         android:textColor="#FFFFFF" android:textSize="30sp" android:textStyle="bold"
         android:maxLines="4" android:shadowColor="#000000" android:shadowRadius="8"
         android:shadowDx="1" android:shadowDy="2" android:clickable="true" />
+    <Button android:id="@+id/full_background" android:accessibilityLiveRegion="polite" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:minHeight="48dp"
+        android:layout_gravity="top|center_horizontal" android:layout_marginTop="72dp"
+        android:text="@string/radio_visual_choose" />
     <Button android:id="@+id/full_close" android:layout_width="wrap_content"
         android:layout_height="48dp" android:layout_gravity="top|end"
         android:layout_margin="16dp" android:text="@string/radio_close_fullscreen" />

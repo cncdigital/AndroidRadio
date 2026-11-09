@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
     }
     private lateinit var browserFuture: ListenableFuture<MediaBrowser>
     private var browser: MediaBrowser? = null
+    private var audioDialog: AlertDialog? = null
     private var karaokeActive = false
     private var playWhenConnected = false
     private var shuffleWhenConnected = false
@@ -77,6 +78,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var lyricsScroll: ScrollView
     private lateinit var cover: ImageView
     private lateinit var ghost: TextView
+    private var activityVisible = false
+    private var visualStyle = RadioVisualStyle.COVER
+    private lateinit var visualizer: RadioVisualizerView
     private var fullScreen: Dialog? = null
     private var coverBitmap: Bitmap? = null
     private var currentGhost = ""
@@ -124,6 +128,7 @@ class MainActivity : ComponentActivity() {
             karaokeActive = browser?.sessionExtras?.getBoolean("radio.karaoke.active", karaokeActive) ?: karaokeActive
             renderProgress()
             updateFullScreen()
+            updateBackgroundMotion()
             handler.postDelayed(this, 200)
         }
     }
@@ -157,11 +162,17 @@ class MainActivity : ComponentActivity() {
         lyricsScroll = findViewById(R.id.lyrics_scroll)
         cover = findViewById(R.id.song_cover)
         ghost = findViewById(R.id.ghost_lyric)
+        visualizer = findViewById(R.id.radio_visualizer)
+        visualStyle = RadioVisualStyle.fromId(getSharedPreferences("radio_visuals", MODE_PRIVATE).getString("background", null))
+        findViewById<RadioArtworkFrame>(R.id.radio_artwork).onBackgroundSwipe = ::changeBackground
+        findViewById<Button>(R.id.radio_background).setOnClickListener { showBackgroundPicker() }
+        applyBackground()
         findViewById<Button>(R.id.close_radio).setOnClickListener { closeRadioApp() }
         findViewById<Button>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
         findViewById<Button>(R.id.radio_favorite).setOnClickListener { toggleFavorite() }
         findViewById<Button>(R.id.radio_shuffle).setOnClickListener { shuffleRadio() }
         findViewById<Button>(R.id.radio_tastes).setOnClickListener { showTastes() }
+        findViewById<Button>(R.id.radio_audio).setOnClickListener { audioDialog = RadioAudioDialog.show(this) { browser?.sessionExtras } }
         findViewById<Button>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
         val qualityLabels = listOf(
             getString(R.string.radio_quality_auto), getString(R.string.radio_quality_96),
@@ -614,7 +625,14 @@ class MainActivity : ComponentActivity() {
             view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
             insets
         }
-        dialog.setOnDismissListener { setKaraoke(false); if (fullScreen === dialog) fullScreen = null }
+        dialog.setOnDismissListener {
+            dialog.findViewById<RadioVisualizerView>(R.id.full_visualizer).motionActive = false
+            setKaraoke(false)
+            if (fullScreen === dialog) fullScreen = null
+            updateBackgroundMotion()
+        }
+        dialog.findViewById<RadioArtworkFrame>(R.id.full_artwork).onBackgroundSwipe = ::changeBackground
+        dialog.findViewById<Button>(R.id.full_background).setOnClickListener { showBackgroundPicker() }
         dialog.findViewById<Button>(R.id.full_favorite).setOnClickListener { toggleFavorite() }
         dialog.findViewById<Button>(R.id.full_shuffle).setOnClickListener { shuffleRadio() }
         dialog.findViewById<Button>(R.id.full_karaoke).setOnClickListener { setKaraoke(!karaokeActive) }
@@ -634,8 +652,75 @@ class MainActivity : ComponentActivity() {
         dialog.show()
         dialog.window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
         ViewCompat.requestApplyInsets(fullRoot)
+        applyBackground()
         updateFullScreen()
         updateFavoriteButtons()
+    }
+
+    private fun changeBackground(direction: Int) {
+        selectBackground(visualStyle.shifted(direction))
+    }
+
+    private fun selectBackground(style: RadioVisualStyle) {
+        visualStyle = style
+        getSharedPreferences("radio_visuals", MODE_PRIVATE).edit().putString("background", style.id).apply()
+        applyBackground()
+    }
+
+    private fun showBackgroundPicker() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.radio_visual_choose)
+            .setSingleChoiceItems(RadioVisualStyle.entries.map { getString(it.titleRes) }.toTypedArray(), visualStyle.ordinal) { picker, which ->
+                selectBackground(RadioVisualStyle.entries[which])
+                picker.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun applyBackground() {
+        val original = visualStyle == RadioVisualStyle.COVER
+        cover.visibility = if (original) View.VISIBLE else View.INVISIBLE
+        visualizer.style = visualStyle
+        visualizer.visibility = if (original) View.GONE else View.VISIBLE
+        val label = getString(R.string.radio_visual_label, getString(visualStyle.titleRes), visualStyle.ordinal + 1, RadioVisualStyle.entries.size)
+        findViewById<Button>(R.id.radio_background).apply {
+            text = label
+            contentDescription = getString(R.string.radio_visual_accessibility, label)
+        }
+        fullScreen?.let { dialog ->
+            dialog.findViewById<ImageView>(R.id.full_cover).visibility = if (original) View.VISIBLE else View.INVISIBLE
+            dialog.findViewById<RadioVisualizerView>(R.id.full_visualizer).apply {
+                style = visualStyle
+                visibility = if (original) View.GONE else View.VISIBLE
+            }
+            dialog.findViewById<Button>(R.id.full_background).apply {
+                text = label
+                contentDescription = getString(R.string.radio_visual_accessibility, label)
+            }
+        }
+        // Only backgrounds change. Lyric text, position, karaoke and the audio session are untouched.
+        updateBackgroundMotion()
+    }
+
+    private fun updateBackgroundMotion() {
+        if (!::visualizer.isInitialized) return
+        val animate = activityVisible && browser?.isPlaying == true
+        val maximized = fullScreen?.isShowing == true
+        visualizer.motionActive = animate && !maximized
+        fullScreen?.findViewById<RadioVisualizerView>(R.id.full_visualizer)?.motionActive = animate && maximized
+    }
+
+    override fun onStart() {
+        super.onStart()
+        activityVisible = true
+        updateBackgroundMotion()
+    }
+
+    override fun onStop() {
+        activityVisible = false
+        updateBackgroundMotion()
+        super.onStop()
     }
 
     private fun setKaraoke(enabled: Boolean) {
@@ -664,6 +749,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        audioDialog?.dismiss()
         fullScreen?.dismiss()
         handler.removeCallbacks(tick)
         browser?.removeListener(listener)

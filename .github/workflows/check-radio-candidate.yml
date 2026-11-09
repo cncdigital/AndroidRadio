@@ -1,0 +1,114 @@
+name: Verificar candidata Radio Sindical
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ['android-app/**', '.github/workflows/check-radio-candidate.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: radio-candidate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/radio-visuals-audio-0.10.28'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android-app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 platform-tools'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Compilar y ejecutar pruebas unitarias
+        run: gradle testDebugUnitTest assembleDebug assembleDebugAndroidTest --no-daemon --stacktrace
+
+      - name: Compilar candidata con la firma existente
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          RADIO_SIGNING_STORE_FILE: ${{ runner.temp }}/radiosindical-candidate.jks
+          RADIO_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          RADIO_SIGNING_KEY_ALIAS: radiosindical
+          RADIO_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KS_B64" ] || [ -z "$RADIO_SIGNING_STORE_PASSWORD" ]; then
+            echo "::error::La firma permanente no está disponible para esta ejecución."
+            exit 1
+          fi
+          umask 077
+          trap 'rm -f "$RADIO_SIGNING_STORE_FILE"' EXIT
+          printf '%s' "$KS_B64" | base64 -d > "$RADIO_SIGNING_STORE_FILE"
+          gradle testReleaseUnitTest assembleRelease --no-daemon --stacktrace
+
+      - name: Limpiar copia temporal de firma
+        if: always()
+        run: rm -f "$RUNNER_TEMP/radiosindical-candidate.jks"
+
+      - name: Verificar certificado y versión de candidata
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          OUT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK")
+          printf '%s\n' "$OUT" | grep -qi 'SHA-256 digest: 89c6a0e71776d62240dd55bdceed9edbe46fe02b7102ae02d6fafae8d0bf642e'
+          BADGING=$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK")
+          grep -q "versionCode='38' versionName='0.10.28'" <<< "$BADGING"
+          cp "$APK" "$RUNNER_TEMP/RadioSindical-0.10.28-candidate.apk"
+          sha256sum "$RUNNER_TEMP/RadioSindical-0.10.28-candidate.apk"
+          echo 'Certificado permanente y versión 0.10.28/38 verificados. No se publica la actualización.'
+
+      - name: Conservar candidata para revisión
+        uses: actions/upload-artifact@v4
+        with:
+          name: RadioSindical-0.10.28-signed-candidate
+          path: ${{ runner.temp }}/RadioSindical-0.10.28-candidate.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Comprobar aceleración disponible sin cambiar permisos
+        run: |
+          if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+            echo '::error::El emulador requiere acceso a KVM. No se cambian permisos del host automáticamente.'
+            exit 1
+          fi
+
+      - name: Probar reproductor, gestos, capas y preferencias en Android
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: false
+          script: cd "$GITHUB_WORKSPACE/android-app" && gradle connectedDebugAndroidTest --no-daemon --stacktrace
+
+      - name: Conservar resultados de pruebas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RadioSindical-0.10.28-test-results
+          path: |
+            android-app/app/build/test-results/
+            android-app/app/build/outputs/androidTest-results/
+            android-app/app/build/reports/tests/
+            android-app/app/build/reports/androidTests/
+          if-no-files-found: ignore
+          retention-days: 7

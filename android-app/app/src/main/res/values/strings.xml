@@ -25,4 +25,14 @@
     <string name="radio_quality_96">96 kbps</string>
     <string name="radio_quality_192">192 kbps</string>
     <string name="radio_quality_320">320 kbps</string>
+    <string name="radio_visual_cover">Portada original</string>
+    <string name="radio_visual_bars">Barras neón</string>
+    <string name="radio_visual_waves">Ondas</string>
+    <string name="radio_visual_tunnel">Túnel</string>
+    <string name="radio_visual_aurora">Aurora</string>
+    <string name="radio_visual_stars">Estrellas</string>
+    <string name="radio_visual_choose">Elegir fondo</string>
+    <string name="radio_visual_label">Fondo: %1$s · %2$d/%3$d</string>
+    <string name="radio_visual_accessibility">%1$s. Toca para elegir otro fondo.</string>
+    <string name="radio_visual_hint">Desliza la portada a izquierda o derecha para cambiar el fondo. La letra permanece visible.</string>
 </resources>
