@@ -526,7 +526,7 @@ class RadioPlaybackService : MediaLibraryService() {
         this, DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory), karaokeProcessor, withKaraoke,
     )
 
-    /** Switch renderers only when karaoke changes. Normal listening uses ExoPlayer's default sink. */
+    /** Rebuild the optional karaoke chain; both paths retain the same passive PCM analyzer. */
     private fun rebuildMusicPlayer(withKaraoke: Boolean) {
         finishAnnouncement()
         val old = player

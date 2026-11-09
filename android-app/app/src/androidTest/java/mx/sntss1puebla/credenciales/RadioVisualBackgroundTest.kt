@@ -78,6 +78,86 @@ class RadioVisualBackgroundTest {
         }
     }
 
+    private fun field(@Suppress("UNUSED_PARAMETER") view: RadioVisualizerView, name: String) =
+        RadioVisualizerView::class.java.getDeclaredField(name).apply { isAccessible = true }
+
+    @Test fun everyStyleRespondsToPcmEnergyAtTheSameAnimationPhase() = instrumentation.runOnMainSync {
+        val view = RadioVisualizerView(instrumentation.targetContext)
+        view.layout(0, 0, 360, 480)
+        val audio = field(view, "audio").get(view) as RadioAudioFrame
+        field(view, "hasPcm").setBoolean(view, true)
+        field(view, "audible").setBoolean(view, true)
+        for (style in RadioVisualStyle.entries.filter { it != RadioVisualStyle.COVER }) {
+            view.style = style
+            val quiet = Bitmap.createBitmap(360, 480, Bitmap.Config.ARGB_8888)
+            val loud = Bitmap.createBitmap(360, 480, Bitmap.Config.ARGB_8888)
+            for (name in arrayOf("energy", "bass", "treble")) field(view, name).setFloat(view, 0f)
+            audio.bands.fill(0f)
+            view.draw(Canvas(quiet))
+            for (name in arrayOf("energy", "bass", "treble")) field(view, name).setFloat(view, 0.85f)
+            audio.bands.fill(0.85f)
+            view.draw(Canvas(loud))
+            assertFalse("${style.id} must react to PCM without advancing time", quiet.sameAs(loud))
+            assertEquals(0f, field(view, "seconds").getFloat(view), 0f)
+            quiet.recycle()
+            loud.recycle()
+        }
+    }
+
+    @Test fun spectrumUsesIndividualFrequencyBands() = instrumentation.runOnMainSync {
+        val view = RadioVisualizerView(instrumentation.targetContext)
+        view.layout(0, 0, 560, 480)
+        view.style = RadioVisualStyle.BARS
+        val audio = field(view, "audio").get(view) as RadioAudioFrame
+        field(view, "audible").setBoolean(view, true)
+        audio.bands[2] = 1f
+        val low = Bitmap.createBitmap(560, 480, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(low))
+        audio.bands[2] = 0f
+        audio.bands[24] = 1f
+        val high = Bitmap.createBitmap(560, 480, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(high))
+        assertNotEquals(low.getPixel(50, 240), high.getPixel(50, 240))
+        assertNotEquals(low.getPixel(490, 240), high.getPixel(490, 240))
+        low.recycle()
+        high.recycle()
+    }
+
+    @Test fun silenceFreezesPhaseAndResumingDoesNotJump() = instrumentation.runOnMainSync {
+        val view = RadioVisualizerView(instrumentation.targetContext)
+        val advance = RadioVisualizerView::class.java.getDeclaredMethod("advanceAudioPhase", Long::class.javaPrimitiveType)
+            .apply { isAccessible = true }
+        field(view, "energy").setFloat(view, 1f)
+        advance.invoke(view, 1000L)
+        advance.invoke(view, 9000L)
+        assertEquals(0f, field(view, "seconds").getFloat(view), 0f)
+        field(view, "audible").setBoolean(view, true)
+        advance.invoke(view, 10000L)
+        assertEquals(0f, field(view, "seconds").getFloat(view), 0f)
+        advance.invoke(view, 10042L)
+        val movingPhase = field(view, "seconds").getFloat(view)
+        assertTrue(movingPhase > 0f)
+        field(view, "audible").setBoolean(view, false)
+        advance.invoke(view, 11000L)
+        advance.invoke(view, 20000L)
+        assertEquals(movingPhase, field(view, "seconds").getFloat(view), 0f)
+        field(view, "audible").setBoolean(view, true)
+        advance.invoke(view, 25000L)
+        assertEquals(movingPhase, field(view, "seconds").getFloat(view), 0f)
+    }
+
+    @Test fun detachedOrHiddenViewNeverSchedulesFrames() = instrumentation.runOnMainSync {
+        val view = RadioVisualizerView(instrumentation.targetContext)
+        view.layout(0, 0, 360, 480)
+        view.style = RadioVisualStyle.STARS
+        view.motionActive = true
+        assertFalse(field(view, "scheduled").getBoolean(view))
+        view.visibility = View.GONE
+        (field(view, "frame").get(view) as Runnable).run()
+        assertFalse(field(view, "scheduled").getBoolean(view))
+        assertEquals(0f, field(view, "seconds").getFloat(view), 0f)
+    }
+
     @Test fun scrollViewAllowsHorizontalSwipesAndKeepsVerticalScrolling() = instrumentation.runOnMainSync {
         val context = instrumentation.targetContext
         val density = context.resources.displayMetrics.density

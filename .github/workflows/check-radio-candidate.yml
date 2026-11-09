@@ -71,24 +71,33 @@ jobs:
           OUT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK")
           printf '%s\n' "$OUT" | grep -qi 'SHA-256 digest: 89c6a0e71776d62240dd55bdceed9edbe46fe02b7102ae02d6fafae8d0bf642e'
           BADGING=$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK")
-          grep -q "versionCode='38' versionName='0.10.28'" <<< "$BADGING"
-          cp "$APK" "$RUNNER_TEMP/RadioSindical-0.10.28-candidate.apk"
-          sha256sum "$RUNNER_TEMP/RadioSindical-0.10.28-candidate.apk"
-          echo 'Certificado permanente y versión 0.10.28/38 verificados. No se publica la actualización.'
+          grep -q "versionCode='39' versionName='0.10.29'" <<< "$BADGING"
+          cp "$APK" "$RUNNER_TEMP/RadioSindical-0.10.29-candidate.apk"
+          sha256sum "$RUNNER_TEMP/RadioSindical-0.10.29-candidate.apk"
+          echo 'Certificado permanente y versión 0.10.29/39 verificados. No se publica la actualización.'
 
-      - name: Conservar candidata para revisión
-        uses: actions/upload-artifact@v4
-        with:
-          name: RadioSindical-0.10.28-signed-candidate
-          path: ${{ runner.temp }}/RadioSindical-0.10.28-candidate.apk
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Comprobar aceleración disponible sin cambiar permisos
+      - name: Habilitar KVM temporalmente para la prueba autorizada
         run: |
+          set -euo pipefail
           if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
-            echo '::error::El emulador requiere acceso a KVM. No se cambian permisos del host automáticamente.'
-            exit 1
+            # One approved execution only; later runs must not reuse this grant.
+            if [ "$GITHUB_RUN_NUMBER" != 2 ] || [ "$GITHUB_RUN_ATTEMPT" != 1 ]; then
+              echo '::error::Esta ejecución no tiene autorización para cambiar el acceso a KVM.'
+              exit 1
+            fi
+            test -c /dev/kvm
+            command -v getfacl
+            command -v setfacl
+            umask 077
+            getfacl -p /dev/kvm > "$RUNNER_TEMP/radio-kvm-original.acl"
+            # Do not widen an existing ACL mask for any other identity.
+            if grep -q '#effective:' "$RUNNER_TEMP/radio-kvm-original.acl"; then
+              echo '::error::La ACL existente requiere revisión; no se ha cambiado.'
+              rm -f "$RUNNER_TEMP/radio-kvm-original.acl"
+              exit 1
+            fi
+            sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+            test -r /dev/kvm && test -w /dev/kvm
           fi
 
       - name: Probar reproductor, gestos, capas y preferencias en Android
@@ -100,11 +109,28 @@ jobs:
           disable-animations: false
           script: cd "$GITHUB_WORKSPACE/android-app" && gradle connectedDebugAndroidTest --no-daemon --stacktrace
 
+      - name: Restaurar acceso original a KVM
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f "$RUNNER_TEMP/radio-kvm-original.acl" ]; then
+            sudo setfacl --restore="$RUNNER_TEMP/radio-kvm-original.acl"
+            rm -f "$RUNNER_TEMP/radio-kvm-original.acl"
+          fi
+
+      - name: Conservar candidata para revisión
+        uses: actions/upload-artifact@v4
+        with:
+          name: RadioSindical-0.10.29-signed-candidate
+          path: ${{ runner.temp }}/RadioSindical-0.10.29-candidate.apk
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Conservar resultados de pruebas
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: RadioSindical-0.10.28-test-results
+          name: RadioSindical-0.10.29-test-results
           path: |
             android-app/app/build/test-results/
             android-app/app/build/outputs/androidTest-results/
