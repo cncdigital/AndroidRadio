@@ -22,15 +22,9 @@
         <TextView android:id="@+id/full_time" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:gravity="center" android:paddingVertical="4dp"
             android:textColor="#FFFFFF" android:textSize="14sp" />
-        <Button android:id="@+id/full_favorite" android:layout_width="match_parent"
-            android:layout_height="48dp" android:text="♡ Favorito" android:contentDescription="Guardar canción favorita" />
-        <Button android:id="@+id/full_shuffle" android:layout_width="match_parent"
-            android:layout_height="48dp" android:layout_marginTop="6dp"
-            android:backgroundTint="@color/sntss_gold" android:text="@string/radio_shuffle"
-            android:contentDescription="@string/radio_shuffle_desc" />
-        <Button android:id="@+id/full_karaoke" android:layout_width="match_parent"
-            android:layout_height="48dp" android:text="Karaoke · reducir voz"
-            android:contentDescription="Activar karaoke con reducción de voz central; depende de la mezcla original" />
+        <Button android:id="@+id/full_favorite" style="@style/RadioActionButton" android:text="Favorito" android:drawableStart="@drawable/ic_action_favorite" android:contentDescription="Guardar canción favorita" />
+        <Button android:id="@+id/full_shuffle" style="@style/RadioActionButton" android:text="Aleatorio" android:drawableStart="@drawable/ic_action_shuffle" android:contentDescription="Reproducir otra canción aleatoria" />
+        <Button android:id="@+id/full_karaoke" style="@style/RadioActionButton" android:text="Karaoke · reducir voz" android:drawableStart="@drawable/ic_action_karaoke" android:contentDescription="Karaoke · reducir voz" />
         <TextView android:id="@+id/full_title" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:gravity="center"
             android:textColor="@android:color/white" android:textSize="20sp"

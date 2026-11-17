@@ -72,6 +72,24 @@ class RadioIconControlsTest {
             assertNotNull(play.drawable)
         }
     }
+    @Test fun secondaryActionsKeepLabelsIconsAndTouchTargets() = instrumentation.runOnMainSync {
+        for (width in listOf(320, 420, 600)) {
+            val root = normal(width)
+            val density = root.resources.displayMetrics.density
+            val ids = listOf(R.id.radio_shuffle, R.id.radio_favorite, R.id.radio_audio, R.id.radio_tastes)
+            ids.forEach { id ->
+                val button = root.findViewById<android.widget.Button>(id)
+                assertNotNull(button.compoundDrawablesRelative[0])
+                assertFalse(button.text.isNullOrBlank())
+                assertFalse(button.contentDescription.isNullOrBlank())
+                assertTrue(button.height >= 48 * density)
+                assertTrue(bounds(root, button).right <= root.width)
+                var clicked = false
+                button.setOnClickListener { clicked = true }; button.performClick()
+                assertTrue(clicked)
+            }
+        }
+    }
     @Test fun renderNormalControlsForReview() = instrumentation.runOnMainSync {
         val root = normal(420)
         root.findViewById<TextView>(R.id.song_title).text = "Radio Sindical"

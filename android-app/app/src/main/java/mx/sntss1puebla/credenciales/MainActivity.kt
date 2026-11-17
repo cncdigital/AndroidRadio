@@ -454,11 +454,10 @@ class MainActivity : ComponentActivity() {
         val id = browser?.currentMediaItem?.mediaId.orEmpty()
         val selected = RadioPreferences.isFavorite(this,id)
         listOfNotNull(findViewById<Button>(R.id.radio_favorite),fullScreen?.findViewById<Button>(R.id.full_favorite)).forEach {
-            it.text = if (selected) "♥ Favorita" else "♡ Favorito"
+            it.text = if (selected) "Favorita guardada" else "Favorito"
             it.contentDescription = if (selected) "Quitar canción de favoritos" else "Guardar canción favorita"
             it.isEnabled = id.startsWith("song:")
             it.isSelected = selected
-            it.setTextColor(if (selected) Color.rgb(173,23,70) else Color.rgb(7,29,54))
         }
     }
     private fun applyTastes() {

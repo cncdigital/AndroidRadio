@@ -12,3 +12,8 @@ Actualización sobre la candidata 0.10.30. Mantiene applicationId y firma perman
 La CI compila debug/release, ejecuta unitarias y verifica certificado/versión. Pruebas instrumentadas cubren 320/420/600 dp, cabecera fija, íconos y acciones accesibles, transporte y captura sintética; la suite anterior sigue comprobando pantalla completa. El emulador solo se ejecuta si KVM ya es accesible: no cambia permisos. Si no lo es, el resultado se comunica como no ejecutado, no aprobado.
 
 No distribuir de forma general ni actualizar main, rama apk o releases. Esta APK es candidata para Christian; requiere prueba en teléfono y no implica validación en vehículo.
+
+## 0.10.32 / 42 — secondary controls
+- Remove only the app-owned explanatory paragraph “Desliza la portada…”. Preserve album art, artist credits, lyrics, swipe and audio behavior.
+- Replace emoji/system-button appearance on shuffle, favorite, audio and tastes with vector icons, labeled 56dp rounded navy controls, accessible contrast, focus/ripple and selected-favorite state. Apply matching controls in fullscreen.
+- Build and unit tests must pass for this candidate. Instrumented tests are compiled only unless CI already has accessible KVM; no KVM permissions are changed. No device or rendered visual verification is claimed.
