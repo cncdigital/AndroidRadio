@@ -8,11 +8,11 @@ mkdir -p "$REPORT"
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w \
-  -e class 'mx.sntss1puebla.credenciales.RadioFullscreenControlsTest#onlyFullscreenChromeFadesAndLyricRemainsVisible' \
+  -e class 'mx.sntss1puebla.credenciales.RadioFullscreenControlsTest#onlyFullscreenChromeFadesAndLyricRemainsVisible,mx.sntss1puebla.credenciales.RadioIconControlsTest#renderNormalControlsForReview' \
   mx.sntss1puebla.credenciales.test/androidx.test.runner.AndroidJUnitRunner \
   | tee "$REPORT/instrumentation.txt"
-grep -Fq 'OK (1 test)' "$REPORT/instrumentation.txt"
-for name in fullscreen-controls-visible.png fullscreen-controls-hidden.png; do
+grep -Fq 'OK (2 tests)' "$REPORT/instrumentation.txt"
+for name in fullscreen-controls-visible.png fullscreen-controls-hidden.png normal-icon-controls.png; do
   adb exec-out run-as mx.sntss1puebla.credenciales cat "cache/radio-fullscreen-review/$name" > "$REPORT/$name"
   test -s "$REPORT/$name"
 done

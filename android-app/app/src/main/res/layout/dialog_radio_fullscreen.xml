@@ -40,13 +40,12 @@
             android:textColor="#CADCE9" android:textSize="16sp" />
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="12dp" android:gravity="center" android:orientation="horizontal">
-            <Button android:id="@+id/full_previous" android:layout_width="wrap_content"
-                android:layout_height="52dp" android:text="@string/radio_previous" />
-            <Button android:id="@+id/full_play" android:layout_width="wrap_content"
-                android:layout_height="52dp" android:layout_marginHorizontal="8dp"
-                android:backgroundTint="@color/sntss_gold" android:text="@string/play_radio_car" />
-            <Button android:id="@+id/full_next" android:layout_width="wrap_content"
-                android:layout_height="52dp" android:text="@string/radio_next" />
+            <ImageButton android:id="@+id/full_previous" style="@style/RadioTransportButton"
+                android:src="@drawable/ic_control_previous" android:contentDescription="@string/radio_previous" android:tooltipText="@string/radio_previous" />
+            <ImageButton android:id="@+id/full_play" style="@style/RadioPlayButton"
+                android:src="@drawable/ic_control_play" android:contentDescription="@string/play_radio_car" android:tooltipText="@string/play_radio_car" />
+            <ImageButton android:id="@+id/full_next" style="@style/RadioTransportButton"
+                android:src="@drawable/ic_control_next" android:contentDescription="@string/radio_next" android:tooltipText="@string/radio_next" />
         </LinearLayout>
     </LinearLayout>
     <TextView android:id="@+id/full_lyric" android:layout_width="wrap_content"
@@ -56,9 +55,10 @@
         android:textColor="#FFFFFF" android:textSize="30sp" android:textStyle="bold"
         android:maxLines="4" android:shadowColor="#000000" android:shadowRadius="8"
         android:shadowDx="1" android:shadowDy="2" android:clickable="true" />
-    <Button android:id="@+id/full_close" android:layout_width="wrap_content"
-        android:layout_height="48dp" android:layout_gravity="top|end"
-        android:layout_margin="16dp" android:text="@string/radio_close_fullscreen" />
+    <ImageButton android:id="@+id/full_close" style="@style/RadioWindowButton"
+        android:layout_gravity="top|end" android:layout_margin="16dp"
+        android:src="@drawable/ic_control_restore" android:contentDescription="@string/radio_close_fullscreen"
+        android:tooltipText="@string/radio_close_fullscreen" />
     <Button android:id="@+id/full_lyric_move" android:layout_width="wrap_content"
         android:layout_height="42dp" android:layout_gravity="top|start"
         android:layout_margin="16dp" android:text="@string/radio_move_lyrics"

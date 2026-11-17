@@ -183,7 +183,7 @@ class RadioFullscreenControlsTest {
         var style = RadioVisualStyle.COVER
         var swipes = 0
         onMain {
-            f.root.findViewById<Button>(R.id.full_play).setOnTouchListener { _, event ->
+            f.root.findViewById<android.widget.ImageButton>(R.id.full_play).setOnTouchListener { _, event ->
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) buttonTouches++
                 false
             }
@@ -432,7 +432,7 @@ class RadioFullscreenControlsTest {
             awaitHidden(first)
 
             // Tapping the screen location of a hidden button must reveal, not activate, it.
-            lateinit var play: Button
+            lateinit var play: android.widget.ImageButton
             onMain { play = first.root.findViewById(R.id.full_play) }
             tap(play)
             onMain {

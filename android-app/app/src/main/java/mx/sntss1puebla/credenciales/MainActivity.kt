@@ -27,6 +27,7 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.text.style.RelativeSizeSpan
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.view.View
 import android.view.WindowManager
@@ -67,9 +68,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var artist: TextView
     private lateinit var status: TextView
     private lateinit var networkWarning: TextView
-    private lateinit var playButton: Button
-    private lateinit var previousButton: Button
-    private lateinit var nextButton: Button
+    private lateinit var playButton: ImageButton
+    private lateinit var previousButton: ImageButton
+    private lateinit var nextButton: ImageButton
     private lateinit var seek: SeekBar
     private lateinit var progress: TextView
     private lateinit var bitrate: TextView
@@ -148,6 +149,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         RadioCacheWorker.schedule(this)
         setContentView(R.layout.activity_main)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val screen = findViewById<View>(R.id.radio_screen)
+        ViewCompat.setOnApplyWindowInsetsListener(screen) { view, insets ->
+            val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(screen)
         title = findViewById(R.id.song_title)
         artist = findViewById(R.id.song_artist)
         status = findViewById(R.id.radio_status)
@@ -167,13 +176,13 @@ class MainActivity : ComponentActivity() {
         visualStyle = RadioVisualStyle.fromId(getSharedPreferences("radio_visuals", MODE_PRIVATE).getString("background", null))
         findViewById<RadioArtworkFrame>(R.id.radio_artwork).onBackgroundSwipe = ::changeBackground
         applyBackground()
-        findViewById<Button>(R.id.close_radio).setOnClickListener { closeRadioApp() }
-        findViewById<Button>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
+        findViewById<ImageButton>(R.id.close_radio).setOnClickListener { closeRadioApp() }
+        findViewById<ImageButton>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
         findViewById<Button>(R.id.radio_favorite).setOnClickListener { toggleFavorite() }
         findViewById<Button>(R.id.radio_shuffle).setOnClickListener { shuffleRadio() }
         findViewById<Button>(R.id.radio_tastes).setOnClickListener { showTastes() }
         findViewById<Button>(R.id.radio_audio).setOnClickListener { audioDialog = RadioAudioDialog.show(this) { browser?.sessionExtras } }
-        findViewById<Button>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
+        findViewById<ImageButton>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
         val qualityLabels = listOf(
             getString(R.string.radio_quality_auto), getString(R.string.radio_quality_96),
             getString(R.string.radio_quality_192), getString(R.string.radio_quality_320)
@@ -472,7 +481,7 @@ class MainActivity : ComponentActivity() {
         val item = player?.currentMediaItem
         title.text = item?.mediaMetadata?.title ?: getString(R.string.radio_title)
         artist.text = item?.mediaMetadata?.artist ?: getString(R.string.radio_subtitle)
-        playButton.text = getString(if (player?.isPlaying == true) R.string.radio_paused else R.string.play_radio_car)
+        RadioControlIcons.renderPlayback(playButton, player?.isPlaying == true)
         previousButton.isEnabled = player?.hasPreviousMediaItem() == true
         nextButton.isEnabled = player?.hasNextMediaItem() == true
         if (item != null) status.setText(R.string.radio_ready)
@@ -647,14 +656,14 @@ class MainActivity : ComponentActivity() {
         dialog.findViewById<Button>(R.id.full_favorite).setOnClickListener { toggleFavorite() }
         dialog.findViewById<Button>(R.id.full_shuffle).setOnClickListener { shuffleRadio() }
         dialog.findViewById<Button>(R.id.full_karaoke).setOnClickListener { setKaraoke(!karaokeActive) }
-        dialog.findViewById<Button>(R.id.full_close).setOnClickListener { dialog.dismiss() }
+        dialog.findViewById<ImageButton>(R.id.full_close).setOnClickListener { dialog.dismiss() }
         val fullLyric = dialog.findViewById<TextView>(R.id.full_lyric)
         val dragLyric = floatingLyricDragListener(fullRoot, fullLyric)
         fullLyric.setOnTouchListener(dragLyric)
         dialog.findViewById<Button>(R.id.full_lyric_move).setOnTouchListener(dragLyric)
-        dialog.findViewById<Button>(R.id.full_previous).setOnClickListener { browser?.seekToPreviousMediaItem() }
-        dialog.findViewById<Button>(R.id.full_next).setOnClickListener { browser?.seekToNextMediaItem() }
-        dialog.findViewById<Button>(R.id.full_play).setOnClickListener {
+        dialog.findViewById<ImageButton>(R.id.full_previous).setOnClickListener { browser?.seekToPreviousMediaItem() }
+        dialog.findViewById<ImageButton>(R.id.full_next).setOnClickListener { browser?.seekToNextMediaItem() }
+        dialog.findViewById<ImageButton>(R.id.full_play).setOnClickListener {
             val player = browser
             if (player == null || player.mediaItemCount == 0) startRadio()
             else if (player.isPlaying) player.pause() else resumePlayback(player)
@@ -743,7 +752,10 @@ class MainActivity : ComponentActivity() {
         dialog.findViewById<TextView>(R.id.full_time).text = "${formatTime(position)} / ${if (duration > 0) formatTime(duration) else "—:—"}"
         dialog.findViewById<TextView>(R.id.full_title).text = title.text
         dialog.findViewById<TextView>(R.id.full_artist).text = artist.text
-        dialog.findViewById<Button>(R.id.full_play).text = playButton.text
+        RadioControlIcons.renderPlayback(dialog.findViewById(R.id.full_play), browser?.isPlaying == true)
+        dialog.findViewById<ImageButton>(R.id.full_play).isEnabled = playButton.isEnabled
+        dialog.findViewById<ImageButton>(R.id.full_previous).isEnabled = previousButton.isEnabled
+        dialog.findViewById<ImageButton>(R.id.full_next).isEnabled = nextButton.isEnabled
         dialog.findViewById<Button>(R.id.full_karaoke).text = if (karaokeActive) "Apagar karaoke" else "Karaoke · reducir voz"
         dialog.findViewById<Button>(R.id.full_karaoke).isSelected = karaokeActive
     }

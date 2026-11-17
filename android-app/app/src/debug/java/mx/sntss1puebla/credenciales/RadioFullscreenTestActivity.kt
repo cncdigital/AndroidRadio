@@ -55,8 +55,8 @@ class RadioFullscreenTestActivity : Activity() {
             translationY = -13f
         }
         root.findViewById<RadioArtworkFrame>(R.id.full_artwork).setOnClickListener { controls.show() }
-        root.findViewById<Button>(R.id.full_play).setOnClickListener { playClicks++ }
-        root.findViewById<Button>(R.id.full_close).setOnClickListener { dialog.dismiss() }
+        root.findViewById<android.widget.ImageButton>(R.id.full_play).setOnClickListener { playClicks++ }
+        root.findViewById<android.widget.ImageButton>(R.id.full_close).setOnClickListener { dialog.dismiss() }
         dialog.setOnDismissListener {
             controls.dispose()
             if (fullscreen === dialog) {
