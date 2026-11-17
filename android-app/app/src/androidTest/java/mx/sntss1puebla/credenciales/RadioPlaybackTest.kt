@@ -32,17 +32,19 @@ class RadioPlaybackTest {
         Handler(Looper.getMainLooper()).post(task)
         return task.get(10, TimeUnit.SECONDS)
     }
-    private fun tone(): File {
+    private fun tone(segmented: Boolean = false): File {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val rate = 44100
-        val frames = rate * 4
+        val frames = rate * if (segmented) 6 else 4
         val dataBytes = frames * 4
         val out = ByteBuffer.allocate(44 + dataBytes).order(ByteOrder.LITTLE_ENDIAN)
         out.put("RIFF".toByteArray()).putInt(36 + dataBytes).put("WAVEfmt ".toByteArray())
         out.putInt(16).putShort(1.toShort()).putShort(2.toShort()).putInt(rate).putInt(rate * 4).putShort(4.toShort()).putShort(16.toShort())
         out.put("data".toByteArray()).putInt(dataBytes)
         repeat(frames) { i ->
-            val sample = (kotlin.math.sin(i * 2 * Math.PI * 440 / rate) * 5000).toInt().toShort()
+            val frequency = if (segmented && i >= rate * 4) 8000 else 440
+            val amplitude = if (segmented && i >= rate * 2 && i < rate * 4) 0 else 5000
+            val sample = (kotlin.math.sin(i * 2 * Math.PI * frequency / rate) * amplitude).toInt().toShort()
             out.putShort(sample).putShort(sample)
         }
         return File(context.cacheDir, "radio-playback-test.wav").apply { writeBytes(out.array()) }
@@ -142,6 +144,95 @@ class RadioPlaybackTest {
             awaitMusic(player)
         } finally {
             onMain { controller?.release(); session.release(); player.release() }
+            wav.delete()
+        }
+    }
+
+    @Test fun pcmFeaturesFollowSeekToSilenceAndNewTrackInsteadOfOldDecodedBuffers() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val wav = tone(segmented = true)
+        val consumer = Any()
+        RadioAudioAnalysis.setConsumerActive(consumer, true)
+        val player = onMain {
+            RadioMusicPlayerFactory.create(context, DefaultMediaSourceFactory(context), KaraokeAudioProcessor(), false).apply {
+                setAudioAttributes(audioAttributes, false)
+                volume = 0f
+                setMediaItem(MediaItem.Builder().setMediaId("song:segments").setUri(Uri.fromFile(wav)).build())
+                prepare(); play()
+            }
+        }
+        fun awaitFeature(label: String, expected: (RadioAudioFrame) -> Boolean) {
+            val frame = RadioAudioFrame()
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
+            while (System.nanoTime() < deadline) {
+                assertNull(onMain { player.playerError })
+                if (RadioAudioAnalysis.read(frame) && expected(frame)) return
+                Thread.sleep(20)
+            }
+            fail("PCM features did not follow $label at ${onMain { player.currentPosition }} ms")
+        }
+        try {
+            awaitMusic(player)
+            awaitFeature("first tone") { it.rms > 0.09f && it.mid > it.treble }
+            onMain { player.seekTo(2500L) }
+            awaitFeature("seek to silence") { it.rms == 0f && it.peak == 0f && it.bands.all { band -> band == 0f } }
+            onMain { player.seekTo(4500L) }
+            awaitFeature("seek to 8 kHz") { it.rms > 0.09f && it.treble > it.mid }
+            onMain {
+                player.setMediaItem(MediaItem.Builder().setMediaId("song:new-track").setUri(Uri.fromFile(wav)).build())
+                player.prepare(); player.play()
+            }
+            awaitFeature("new track at 440 Hz") { it.rms > 0.09f && it.mid > it.treble }
+        } finally {
+            onMain { player.release() }
+            RadioAudioAnalysis.setConsumerActive(consumer, false)
+            wav.delete()
+        }
+    }
+
+    @Test fun productionMusicSinkPublishesRealPcmFeaturesAndClearsOnPause() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val wav = tone()
+        val consumer = Any()
+        RadioAudioAnalysis.setConsumerActive(consumer, true)
+        try {
+            for (karaoke in listOf(false, true)) {
+                val player = onMain {
+                    RadioMusicPlayerFactory.create(context, DefaultMediaSourceFactory(context),
+                        KaraokeAudioProcessor().apply { enabled = karaoke }, karaoke).apply {
+                        setAudioAttributes(audioAttributes, false)
+                        volume = 0f // Analysis is internal decoded PCM, independent of speaker volume.
+                        setMediaItem(MediaItem.Builder().setMediaId("song:pcm-test").setUri(Uri.fromFile(wav)).build())
+                        prepare(); play()
+                    }
+                }
+                try {
+                    awaitMusic(player)
+                    val frame = RadioAudioFrame()
+                    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8)
+                    var found = false
+                    while (System.nanoTime() < deadline) {
+                        if (RadioAudioAnalysis.read(frame) && frame.rms > 0.005f) { found = true; break }
+                        Thread.sleep(25)
+                    }
+                    assertTrue("Production AudioSink did not feed audible PCM to the visualizer", found)
+                    assertEquals(if (karaoke) 0.0216f else 0.1079f, frame.rms, 0.008f)
+                    assertTrue("440 Hz should excite middle bands", frame.mid > frame.treble)
+                    onMain { player.pause() }
+                    assertFalse("Paused playback must not expose a moving spectrum", RadioAudioAnalysis.read(frame))
+                    onMain { player.play() }
+                    awaitMusic(player)
+                    onMain {
+                        player.setMediaItem(MediaItem.Builder().setMediaId("commercial:pcm-test").setUri(Uri.fromFile(wav)).build())
+                        player.prepare(); player.play()
+                    }
+                    awaitMusic(player)
+                    assertFalse("Commercial-only audio must not pretend to be the song spectrum", RadioAudioAnalysis.read(frame))
+                } finally { onMain { player.release() } }
+                assertFalse("Released output must not leave a stale signal", RadioAudioAnalysis.read(RadioAudioFrame()))
+            }
+        } finally {
+            RadioAudioAnalysis.setConsumerActive(consumer, false)
             wav.delete()
         }
     }

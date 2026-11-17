@@ -2,6 +2,10 @@ package mx.sntss1puebla.credenciales
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.media.AudioManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import android.os.Bundle
 import androidx.media3.session.CommandButton
 import androidx.media3.session.SessionCommand
@@ -39,6 +43,8 @@ import java.io.File
 /** Exposes the authorized portal library to Android Auto's driver-safe media UI. */
 class RadioPlaybackService : MediaLibraryService() {
     companion object {
+        const val ACTION_RECHECK_AUDIO = "mx.sntss1puebla.credenciales.action.RECHECK_AUDIO"
+        const val ACTION_UPDATE_AUDIO = "mx.sntss1puebla.credenciales.action.UPDATE_AUDIO"
         const val ACTION_SET_KARAOKE = "mx.sntss1puebla.credenciales.action.SET_KARAOKE"
         const val ACTION_CLOSE_RADIO = "mx.sntss1puebla.credenciales.action.CLOSE_RADIO"
         const val ACTION_UPDATE_TASTES = "mx.sntss1puebla.credenciales.action.UPDATE_TASTES"
@@ -53,6 +59,47 @@ class RadioPlaybackService : MediaLibraryService() {
     private lateinit var voicePlayer: ExoPlayer
     private val karaokeProcessor = KaraokeAudioProcessor()
     private var karaokeActive = false
+    private val audioEffects = RadioAudioEffectsController(onChanged = { applyMusicVolume(); publishAudioState() })
+    private var audioSettings = RadioAudioSettings()
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private val audioSessionListener = object : AnalyticsListener {
+        override fun onAudioSessionIdChanged(eventTime: AnalyticsListener.EventTime, audioSessionId: Int) {
+            if (!::player.isInitialized || player.audioSessionId != audioSessionId) return
+            audioEffects.bind(audioSessionId)
+            applyAudioEffects()
+        }
+    }
+    private val audioRouteCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = refreshAudioRoute()
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) = refreshAudioRoute()
+    }
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun refreshAudioRoute() {
+        if (!::player.isInitialized) return
+        audioEffects.bind(player.audioSessionId, force = true)
+        applyAudioEffects()
+    }
+    private fun isMusicSong() = ::player.isInitialized && player.currentMediaItem?.mediaId?.startsWith("song:") == true
+    private fun applyMusicVolume(withMargin: Boolean = audioEffects.hasActiveEffect()) {
+        if (::player.isInitialized) player.volume = radioMusicVolume(withMargin, announcementStarted)
+    }
+    private fun applyAudioEffects() {
+        if (!::player.isInitialized) return
+        // Lower level before enabling boosts, then restore unity if nothing is supported.
+        val requested = isMusicSong() && RadioAudioEffectKind.entries.any { audioSettings.requested(it) }
+        applyMusicVolume(radioAudioNeedsMarginBeforeChange(requested, audioEffects.hasActiveEffect()))
+        audioEffects.apply(audioSettings, isMusicSong(), karaokeActive)
+        applyMusicVolume()
+        publishAudioState()
+    }
+    private fun publishAudioState() {
+        if (!::librarySession.isInitialized) return
+        val extras = Bundle(librarySession.sessionExtras)
+        extras.putBoolean("radio.karaoke.active", karaokeActive)
+        extras.putBoolean("radio.audio.enabled", audioSettings.enabled)
+        RadioAudioEffectKind.entries.forEach { extras.putString("radio.audio.${it.name}", audioEffects.state(it).name) }
+        librarySession.setSessionExtras(extras)
+    }
     private var announcementStarted = false
     private var completedSongs = 0
     private var elapsedMusicMs = 0L
@@ -76,6 +123,7 @@ class RadioPlaybackService : MediaLibraryService() {
         override fun run() {
             if (::player.isInitialized && player.isPlaying && player.currentMediaItem?.mediaId?.startsWith("song:") == true)
                 lastSongPositionMs = player.currentPosition
+            audioEffects.validateActiveEffects()
             mainHandler.postDelayed(this, 1_000)
         }
     }
@@ -134,7 +182,7 @@ class RadioPlaybackService : MediaLibraryService() {
         if (changed && ::librarySession.isInitialized) rebuildMusicPlayer(enabled)
         if (enabled) finishAnnouncement()
         if (::librarySession.isInitialized) {
-            librarySession.setSessionExtras(Bundle().apply { putBoolean("radio.karaoke.active", enabled) })
+            applyAudioEffects()
             librarySession.connectedControllers.filter { librarySession.isAutoCompanionController(it) || librarySession.isAutomotiveController(it) }
                 .forEach { librarySession.setMediaButtonPreferences(it, automotiveButtons()) }
         }
@@ -357,7 +405,10 @@ class RadioPlaybackService : MediaLibraryService() {
             .setCache(audioCache)
             .setUpstreamDataSourceFactory(upstreamFactory)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        audioSettings = RadioAudioSettings.read(this)
         player = createMusicPlayer(false)
+        player.addAnalyticsListener(audioSessionListener)
+        getSystemService(AudioManager::class.java).registerAudioDeviceCallback(audioRouteCallback, mainHandler)
         voicePlayer = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory))
             .build().apply {
@@ -374,7 +425,7 @@ class RadioPlaybackService : MediaLibraryService() {
                     if (!player.isPlaying) finishAnnouncement()
                     else {
                         announcementStarted = true
-                        player.volume = 0.40f
+                        applyMusicVolume()
                     }
                 } else if (state == Player.STATE_ENDED) finishAnnouncement()
             }
@@ -404,6 +455,7 @@ class RadioPlaybackService : MediaLibraryService() {
             }
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 karaokeProcessor.enabled = karaokeActive && item?.mediaId?.startsWith("song:") == true
+                applyAudioEffects()
                 finishAnnouncement()
                 mainHandler.post { refreshButtons() }
                 if (tastesPending && item?.mediaId?.startsWith("song:") == true) mainHandler.post { applyTastes() }
@@ -465,6 +517,7 @@ class RadioPlaybackService : MediaLibraryService() {
         librarySession = MediaLibrarySession.Builder(this, player, callback)
             .setSessionActivity(openApp)
             .build()
+        publishAudioState()
         // Warm the public song catalog without blocking Android Auto's connection.
         loadSongsIfNeeded()
     }
@@ -473,7 +526,7 @@ class RadioPlaybackService : MediaLibraryService() {
         this, DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory), karaokeProcessor, withKaraoke,
     )
 
-    /** Switch renderers only when karaoke changes. Normal listening uses ExoPlayer's default sink. */
+    /** Rebuild the optional karaoke chain; both paths retain the same passive PCM analyzer. */
     private fun rebuildMusicPlayer(withKaraoke: Boolean) {
         finishAnnouncement()
         val old = player
@@ -482,7 +535,10 @@ class RadioPlaybackService : MediaLibraryService() {
         val position = old.currentPosition.coerceAtLeast(0)
         val resume = old.playWhenReady
         old.removeListener(musicListener)
+        old.removeAnalyticsListener(audioSessionListener)
+        audioEffects.release()
         player = createMusicPlayer(withKaraoke)
+        player.addAnalyticsListener(audioSessionListener)
         player.addListener(musicListener)
         librarySession.setPlayer(player)
         old.release()
@@ -502,6 +558,11 @@ class RadioPlaybackService : MediaLibraryService() {
             if (::player.isInitialized) player.stop()
             stopSelf()
             return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_RECHECK_AUDIO) refreshAudioRoute()
+        if (intent?.action == ACTION_UPDATE_AUDIO) {
+            audioSettings = RadioAudioSettings.read(this)
+            applyAudioEffects()
         }
         if (intent?.action == ACTION_UPDATE_TASTES) { applyTastes(); refreshButtons() }
         if (intent?.action == ACTION_SET_KARAOKE) {
@@ -632,7 +693,7 @@ class RadioPlaybackService : MediaLibraryService() {
         if (activeAnnouncement == null) return
         activeAnnouncement = null
         announcementStarted = false
-        player.volume = 1f
+        applyMusicVolume()
         voicePlayer.stop()
         voicePlayer.clearMediaItems()
     }
@@ -649,6 +710,9 @@ class RadioPlaybackService : MediaLibraryService() {
         mainHandler.removeCallbacks(catalogRefresh)
         mainHandler.removeCallbacks(positionRefresh)
         mainHandler.removeCallbacks(networkProbe)
+        getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(audioRouteCallback)
+        player.removeAnalyticsListener(audioSessionListener)
+        audioEffects.release()
         librarySession.release()
         finishAnnouncement()
         voicePlayer.release()
