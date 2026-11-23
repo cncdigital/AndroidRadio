@@ -38,6 +38,7 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.io.File
 
 /** Exposes the authorized portal library to Android Auto's driver-safe media UI. */
@@ -49,6 +50,7 @@ class RadioPlaybackService : MediaLibraryService() {
         const val ACTION_CLOSE_RADIO = "mx.sntss1puebla.credenciales.action.CLOSE_RADIO"
         const val ACTION_UPDATE_TASTES = "mx.sntss1puebla.credenciales.action.UPDATE_TASTES"
         const val ACTION_NETWORK_WARNING = "mx.sntss1puebla.credenciales.action.NETWORK_WARNING"
+        private const val CAPSULE_START_LIMIT_MS = 5_000L
         private const val RADIO_VOICE_NORMALIZED_VOLUME = 1f // ganancia unitaria; no es una medida acústica
     }
 
@@ -81,7 +83,7 @@ class RadioPlaybackService : MediaLibraryService() {
     }
     private fun isMusicSong() = ::player.isInitialized && player.currentMediaItem?.mediaId?.startsWith("song:") == true
     private fun applyMusicVolume(withMargin: Boolean = audioEffects.hasActiveEffect()) {
-        if (::player.isInitialized) player.volume = radioMusicVolume(withMargin, announcementStarted)
+        if (::player.isInitialized) player.volume = radioMusicVolume(withMargin, capsulePlayback.isAudible)
     }
     private fun applyAudioEffects() {
         if (!::player.isInitialized) return
@@ -100,7 +102,10 @@ class RadioPlaybackService : MediaLibraryService() {
         RadioAudioEffectKind.entries.forEach { extras.putString("radio.audio.${it.name}", audioEffects.state(it).name) }
         librarySession.setSessionExtras(extras)
     }
-    private var announcementStarted = false
+    private val capsulePlayback = RadioCapsulePlayback()
+    private val capsuleExecutor = Executors.newSingleThreadExecutor()
+    private var capsuleDownload: Future<*>? = null
+    private var localCapsuleFile: File? = null
     private var completedSongs = 0
     private var elapsedMusicMs = 0L
     private var lastSongPositionMs = 0L
@@ -127,7 +132,6 @@ class RadioPlaybackService : MediaLibraryService() {
             mainHandler.postDelayed(this, 1_000)
         }
     }
-    private var activeAnnouncement: String? = null
     private var lastNetworkWarningAt = 0L
     private val networkProbe = object : Runnable {
         override fun run() {
@@ -409,9 +413,8 @@ class RadioPlaybackService : MediaLibraryService() {
         player = createMusicPlayer(false)
         player.addAnalyticsListener(audioSessionListener)
         getSystemService(AudioManager::class.java).registerAudioDeviceCallback(audioRouteCallback, mainHandler)
-        voicePlayer = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(this).setDataSourceFactory(cacheFactory))
-            .build().apply {
+        // Narration plays only a validated local file, not another streaming/cache source.
+        voicePlayer = ExoPlayer.Builder(this).build().apply {
                 setAudioAttributes(AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
@@ -420,15 +423,25 @@ class RadioPlaybackService : MediaLibraryService() {
             }
         voicePlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                if (activeAnnouncement == null) return
-                if (state == Player.STATE_READY && !announcementStarted) {
-                    if (!player.isPlaying) finishAnnouncement()
-                    else {
-                        announcementStarted = true
-                        applyMusicVolume()
-                    }
-                } else if (state == Player.STATE_ENDED) finishAnnouncement()
+                if (state == Player.STATE_ENDED && voicePlayer.playbackState == state) finishAnnouncement()
             }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                val id = capsulePlayback.activeId
+                if (id == 0L || voicePlayer.isPlaying != isPlaying) return
+                if (isPlaying) {
+                    if (!player.playWhenReady || player.playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE ||
+                        (capsulePlayback.waitingToStart(id) && !player.isPlaying)) {
+                        finishAnnouncement()
+                        return
+                    }
+                    if (capsulePlayback.markAudible(id)) applyMusicVolume()
+                } else if (capsulePlayback.isAudible) {
+                    // Once the voice has begun, an interruption is terminal; never resume fragments.
+                    finishAnnouncement()
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) = finishAnnouncement()
         })
         musicListener = object : Player.Listener {
@@ -504,8 +517,13 @@ class RadioPlaybackService : MediaLibraryService() {
                 announceIfDue(item)
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (!isPlaying) finishAnnouncement()
                 if (isPlaying) player.currentMediaItem?.takeIf { it.mediaId.startsWith("song:") }?.let { announceIfDue(it) }
+            }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (!playWhenReady) finishAnnouncement()
+            }
+            override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
+                if (playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE) finishAnnouncement()
             }
         }
         player.addListener(musicListener)
@@ -615,16 +633,35 @@ class RadioPlaybackService : MediaLibraryService() {
             .appendQueryParameter("client", "android-auto")
             .apply { if (fact != null) appendQueryParameter("factId", fact.id) }
             .build()
-        val id = "radio-voice-${System.currentTimeMillis()}"
-        activeAnnouncement = id
-        announcementStarted = false
-        voicePlayer.stop()
-        voicePlayer.volume = RADIO_VOICE_NORMALIZED_VOLUME
-        voicePlayer.setMediaItem(MediaItem.fromUri(url))
-        voicePlayer.prepare()
-        voicePlayer.play()
-        // A late request must never interrupt the next song or a user's pause.
-        mainHandler.postDelayed({ if (activeAnnouncement == id && !announcementStarted) finishAnnouncement() }, 12_000)
+        finishAnnouncement()
+        val id = capsulePlayback.start()
+        val startedAt = System.nanoTime()
+        val deadline = startedAt + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(CAPSULE_START_LIMIT_MS)
+        val clipDir = File(cacheDir, "radio-capsule-playback")
+        capsuleDownload = capsuleExecutor.submit {
+            val file = RadioCapsuleDownload.fetch(URL(url.toString()), clipDir, deadline)
+            if (Thread.currentThread().isInterrupted) {
+                file?.delete()
+            } else if (!mainHandler.post {
+                    if (!capsulePlayback.waitingToStart(id) || player.currentMediaItem?.mediaId != item.mediaId) {
+                        file?.delete()
+                    } else if (file == null || System.nanoTime() >= deadline || !player.isPlaying) {
+                        file?.delete()
+                        finishAnnouncement()
+                    } else {
+                        capsuleDownload = null
+                        localCapsuleFile = file
+                        voicePlayer.volume = RADIO_VOICE_NORMALIZED_VOLUME
+                        voicePlayer.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+                        voicePlayer.prepare()
+                        voicePlayer.play()
+                    }
+                }) {
+                file?.delete()
+            }
+        }
+        // Keep the song at its normal level until a complete local clip starts.
+        mainHandler.postDelayed({ if (capsulePlayback.waitingToStart(id)) finishAnnouncement() }, CAPSULE_START_LIMIT_MS)
     }
 
     /** Generate and persist the next song capsule without interrupting playback. */
@@ -690,12 +727,14 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private fun finishAnnouncement() {
-        if (activeAnnouncement == null) return
-        activeAnnouncement = null
-        announcementStarted = false
+        if (!capsulePlayback.stop()) return
+        capsuleDownload?.cancel(true)
+        capsuleDownload = null
         applyMusicVolume()
         voicePlayer.stop()
         voicePlayer.clearMediaItems()
+        localCapsuleFile?.delete()
+        localCapsuleFile = null
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = librarySession
@@ -703,7 +742,7 @@ class RadioPlaybackService : MediaLibraryService() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Swiping the UI away or minimizing it must not stop the radio. The
         // explicit Cerrar app action above is the only user-requested stop.
-        if (!player.playWhenReady && activeAnnouncement == null && player.mediaItemCount == 0) stopSelf()
+        if (!player.playWhenReady && capsulePlayback.activeId == 0L && player.mediaItemCount == 0) stopSelf()
     }
 
     override fun onDestroy() {
@@ -718,6 +757,7 @@ class RadioPlaybackService : MediaLibraryService() {
         voicePlayer.release()
         player.release()
         // Cache is process-wide: WorkManager may still be writing after playback stops.
+        capsuleExecutor.shutdownNow()
         catalogExecutor.shutdownNow()
         super.onDestroy()
     }

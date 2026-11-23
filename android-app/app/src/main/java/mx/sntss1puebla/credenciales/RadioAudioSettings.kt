@@ -35,7 +35,7 @@ internal enum class RadioAudioEffectState { WAITING, UNAVAILABLE, READY, ACTIVE,
 
 /** Unit gain when bypassed. Keep announcement ducking independent from the effects margin. */
 internal fun radioMusicVolume(effectsRequested: Boolean, announcementStarted: Boolean): Float =
-    ((if (effectsRequested) 0.5f else 1f) * (if (announcementStarted) 0.4f else 1f)).coerceIn(0f, 1f)
+    ((if (effectsRequested) 0.5f else 1f) * (if (announcementStarted) 0.25f else 1f)).coerceIn(0f, 1f)
 
 /** Disabling must finish before removing the existing gain margin. */
 internal fun radioAudioNeedsMarginBeforeChange(requested: Boolean, currentlyActive: Boolean) = requested || currentlyActive

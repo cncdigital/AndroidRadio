@@ -35,9 +35,9 @@ class RadioAudioEffectsControllerTest {
         assertFalse(defaults.enabled)
         RadioAudioEffectKind.entries.forEach { assertFalse(defaults.requested(it)) }
         assertEquals(1f, radioMusicVolume(false, false), 0f)
-        assertEquals(0.4f, radioMusicVolume(false, true), 0f)
+        assertEquals(0.25f, radioMusicVolume(false, true), 0f)
         assertEquals(0.5f, radioMusicVolume(true, false), 0f)
-        assertEquals(0.2f, radioMusicVolume(true, true), 0f)
+        assertEquals(0.125f, radioMusicVolume(true, true), 0f)
     }
     @Test fun neverAttachesToGlobalOrInvalidSession() {
         val factory = Factory()
