@@ -8,6 +8,13 @@ import java.util.Locale
 /** Device-local choices; only names present in the listening catalog are offered. */
 internal object RadioPreferences {
     data class Tastes(val artists: Set<String>, val genres: Set<String>, val songs: Set<String> = emptySet())
+    fun frequentCapsules(context: Context): Boolean =
+        context.getSharedPreferences("radio", Context.MODE_PRIVATE).getBoolean("frequent_capsules", false)
+
+    fun saveFrequentCapsules(context: Context, enabled: Boolean) {
+        context.getSharedPreferences("radio", Context.MODE_PRIVATE).edit().putBoolean("frequent_capsules", enabled).apply()
+    }
+
     fun key(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKD)
         .replace(Regex("[\\u0300-\\u036f]"), "").trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
     fun read(context: Context): Tastes {

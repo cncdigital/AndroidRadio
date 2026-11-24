@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="RadioWindowButton">
+        <item name="android:layout_width">48dp</item><item name="android:layout_height">48dp</item>
+        <item name="android:padding">13dp</item><item name="android:scaleType">fitCenter</item>
+        <item name="android:background">@drawable/radio_control_surface</item>
+        <item name="android:tint">@color/radio_control_icon</item>
+        <item name="android:focusable">true</item><item name="android:clickable">true</item>
+    </style>
+    <style name="RadioTransportButton" parent="RadioWindowButton">
+        <item name="android:layout_width">56dp</item><item name="android:layout_height">56dp</item>
+        <item name="android:padding">15dp</item>
+        <item name="android:background">@drawable/radio_transport_surface</item>
+    </style>
+    <style name="RadioPlayButton" parent="RadioTransportButton">
+        <item name="android:layout_width">76dp</item><item name="android:layout_height">76dp</item>
+        <item name="android:layout_marginHorizontal">22dp</item><item name="android:padding">22dp</item>
+        <item name="android:background">@drawable/radio_play_surface</item>
+        <item name="android:tint">@color/radio_play_icon</item>
+        <item name="android:elevation">6dp</item>
+    </style>
+    <style name="RadioActionIconButton" parent="RadioWindowButton">
+        <item name="android:layout_marginHorizontal">2dp</item>
+        <item name="android:background">@drawable/radio_action_surface</item>
+        <item name="android:tint">@color/radio_action_ink</item>
+    </style>
+</resources>

@@ -2,12 +2,14 @@ package mx.sntss1puebla.credenciales
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -27,6 +29,7 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.text.style.RelativeSizeSpan
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.view.View
 import android.view.WindowManager
@@ -59,6 +62,7 @@ class MainActivity : ComponentActivity() {
     }
     private lateinit var browserFuture: ListenableFuture<MediaBrowser>
     private var browser: MediaBrowser? = null
+    private var audioDialog: AlertDialog? = null
     private var karaokeActive = false
     private var playWhenConnected = false
     private var shuffleWhenConnected = false
@@ -66,9 +70,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var artist: TextView
     private lateinit var status: TextView
     private lateinit var networkWarning: TextView
-    private lateinit var playButton: Button
-    private lateinit var previousButton: Button
-    private lateinit var nextButton: Button
+    private lateinit var playButton: ImageButton
+    private lateinit var previousButton: ImageButton
+    private lateinit var nextButton: ImageButton
     private lateinit var seek: SeekBar
     private lateinit var progress: TextView
     private lateinit var bitrate: TextView
@@ -77,7 +81,13 @@ class MainActivity : ComponentActivity() {
     private lateinit var lyricsScroll: ScrollView
     private lateinit var cover: ImageView
     private lateinit var ghost: TextView
+    private var activityVisible = false
+    private var visualStyle = RadioVisualStyle.COVER
+    private var videoPage: RadioYoutubePilot.Video? = null
+    private var videoPauseRequest: ListenableFuture<SessionResult>? = null
+    private lateinit var visualizer: RadioVisualizerView
     private var fullScreen: Dialog? = null
+    private var fullScreenControls: RadioFullscreenControls? = null
     private var coverBitmap: Bitmap? = null
     private var currentGhost = ""
     private val lyricExecutor = Executors.newSingleThreadExecutor()
@@ -124,6 +134,7 @@ class MainActivity : ComponentActivity() {
             karaokeActive = browser?.sessionExtras?.getBoolean("radio.karaoke.active", karaokeActive) ?: karaokeActive
             renderProgress()
             updateFullScreen()
+            updateBackgroundMotion()
             handler.postDelayed(this, 200)
         }
     }
@@ -142,6 +153,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         RadioCacheWorker.schedule(this)
         setContentView(R.layout.activity_main)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val screen = findViewById<View>(R.id.radio_screen)
+        ViewCompat.setOnApplyWindowInsetsListener(screen) { view, insets ->
+            val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(screen)
         title = findViewById(R.id.song_title)
         artist = findViewById(R.id.song_artist)
         status = findViewById(R.id.radio_status)
@@ -157,12 +176,20 @@ class MainActivity : ComponentActivity() {
         lyricsScroll = findViewById(R.id.lyrics_scroll)
         cover = findViewById(R.id.song_cover)
         ghost = findViewById(R.id.ghost_lyric)
-        findViewById<Button>(R.id.close_radio).setOnClickListener { closeRadioApp() }
-        findViewById<Button>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
-        findViewById<Button>(R.id.radio_favorite).setOnClickListener { toggleFavorite() }
-        findViewById<Button>(R.id.radio_shuffle).setOnClickListener { shuffleRadio() }
-        findViewById<Button>(R.id.radio_tastes).setOnClickListener { showTastes() }
-        findViewById<Button>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
+        visualizer = findViewById(R.id.radio_visualizer)
+        visualStyle = RadioVisualStyle.fromId(getSharedPreferences("radio_visuals", MODE_PRIVATE).getString("background", null))
+        findViewById<RadioArtworkFrame>(R.id.radio_artwork).onBackgroundSwipe = ::changeBackground
+        applyBackground()
+        findViewById<Button>(R.id.radio_youtube).setOnClickListener { openYoutubeVideo() }
+        findViewById<ImageButton>(R.id.close_radio).setOnClickListener { closeRadioApp() }
+        findViewById<ImageButton>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
+        findViewById<ImageButton>(R.id.radio_favorite).setOnClickListener { toggleFavorite() }
+        findViewById<ImageButton>(R.id.radio_shuffle).setOnClickListener { shuffleRadio() }
+        findViewById<ImageButton>(R.id.radio_capsules).setOnClickListener { toggleCapsuleFrequency() }
+        updateCapsuleButtons()
+        findViewById<ImageButton>(R.id.radio_tastes).setOnClickListener { showTastes() }
+        findViewById<ImageButton>(R.id.radio_audio).setOnClickListener { audioDialog = RadioAudioDialog.show(this) { browser?.sessionExtras } }
+        findViewById<ImageButton>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
         val qualityLabels = listOf(
             getString(R.string.radio_quality_auto), getString(R.string.radio_quality_96),
             getString(R.string.radio_quality_192), getString(R.string.radio_quality_320)
@@ -263,11 +290,11 @@ class MainActivity : ComponentActivity() {
         }
         status.setText(R.string.radio_connecting)
         playButton.isEnabled = false
-        findViewById<Button>(R.id.radio_shuffle).isEnabled = false
+        findViewById<ImageButton>(R.id.radio_shuffle).isEnabled = false
         val songsFuture = controller.getChildren(RadioCatalog.SONGS_ID, 0, 500, null)
         songsFuture.addListener({
             playButton.isEnabled = true
-            findViewById<Button>(R.id.radio_shuffle).isEnabled = true
+            findViewById<ImageButton>(R.id.radio_shuffle).isEnabled = true
             val songs = runCatching { songsFuture.get().value }.getOrNull()
             if (songs.isNullOrEmpty()) {
                 status.setText(R.string.radio_sign_in)
@@ -433,14 +460,29 @@ class MainActivity : ComponentActivity() {
     private fun updateFavoriteButtons() {
         val id = browser?.currentMediaItem?.mediaId.orEmpty()
         val selected = RadioPreferences.isFavorite(this,id)
-        listOfNotNull(findViewById<Button>(R.id.radio_favorite),fullScreen?.findViewById<Button>(R.id.full_favorite)).forEach {
-            it.text = if (selected) "♥ Favorita" else "♡ Favorito"
+        listOfNotNull(findViewById<ImageButton>(R.id.radio_favorite),fullScreen?.findViewById<ImageButton>(R.id.full_favorite)).forEach {
+            it.setImageResource(if (selected) R.drawable.ic_action_favorite_filled else R.drawable.ic_action_favorite)
             it.contentDescription = if (selected) "Quitar canción de favoritos" else "Guardar canción favorita"
+            it.tooltipText = it.contentDescription
             it.isEnabled = id.startsWith("song:")
             it.isSelected = selected
-            it.setTextColor(if (selected) Color.rgb(173,23,70) else Color.rgb(7,29,54))
         }
     }
+    private fun toggleCapsuleFrequency() {
+        val enabled = !RadioPreferences.frequentCapsules(this)
+        RadioPreferences.saveFrequentCapsules(this, enabled)
+        updateCapsuleButtons()
+        Toast.makeText(this, if (enabled) "Cápsulas cada canción" else "Cápsulas cada 5 canciones", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateCapsuleButtons() {
+        val enabled = RadioPreferences.frequentCapsules(this)
+        listOfNotNull(
+            findViewById<ImageButton>(R.id.radio_capsules),
+            fullScreen?.findViewById<ImageButton>(R.id.full_capsules)
+        ).forEach { RadioControlIcons.renderCapsules(it, enabled) }
+    }
+
     private fun applyTastes() {
         startService(Intent(this, RadioPlaybackService::class.java).setAction(RadioPlaybackService.ACTION_UPDATE_TASTES))
         Toast.makeText(this, "Gustos guardados. Se aplican a las próximas canciones.", Toast.LENGTH_SHORT).show()
@@ -461,11 +503,17 @@ class MainActivity : ComponentActivity() {
         val item = player?.currentMediaItem
         title.text = item?.mediaMetadata?.title ?: getString(R.string.radio_title)
         artist.text = item?.mediaMetadata?.artist ?: getString(R.string.radio_subtitle)
-        playButton.text = getString(if (player?.isPlaying == true) R.string.radio_paused else R.string.play_radio_car)
+        RadioControlIcons.renderPlayback(playButton, player?.isPlaying == true)
         previousButton.isEnabled = player?.hasPreviousMediaItem() == true
         nextButton.isEnabled = player?.hasNextMediaItem() == true
+        val videoBecameUnavailable = videoPage != null && videoPage != currentYoutubeVideo()
+        if (videoBecameUnavailable) {
+            videoPauseRequest = null
+            videoPage = null
+        }
         if (item != null) status.setText(R.string.radio_ready)
         val songId = item?.mediaId?.removePrefix("song:")?.toIntOrNull() ?: -1
+        if (videoBecameUnavailable || songId != currentLyricSongId) applyBackground()
         if (songId != currentLyricSongId) {
             currentLyricSongId = songId
             coverBitmap = null
@@ -608,34 +656,181 @@ class MainActivity : ComponentActivity() {
         // Android 15+ can draw a full-screen dialog behind the gesture/navigation bar.
         // Keep artwork edge-to-edge while reserving the system insets for the controls.
         dialog.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
-        val fullRoot = dialog.findViewById<FrameLayout>(R.id.full_root)
+        val fullRoot = dialog.findViewById<RadioFullscreenFrame>(R.id.full_root)
+        val controls = RadioFullscreenControls(fullRoot, listOf(
+            dialog.findViewById(R.id.full_controls), dialog.findViewById(R.id.full_close),
+            dialog.findViewById(R.id.full_lyric_move)
+        ))
         ViewCompat.setOnApplyWindowInsetsListener(fullRoot) { view, insets ->
             val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
             insets
         }
-        dialog.setOnDismissListener { setKaraoke(false); if (fullScreen === dialog) fullScreen = null }
-        dialog.findViewById<Button>(R.id.full_favorite).setOnClickListener { toggleFavorite() }
-        dialog.findViewById<Button>(R.id.full_shuffle).setOnClickListener { shuffleRadio() }
-        dialog.findViewById<Button>(R.id.full_karaoke).setOnClickListener { setKaraoke(!karaokeActive) }
-        dialog.findViewById<Button>(R.id.full_close).setOnClickListener { dialog.dismiss() }
+        dialog.setOnDismissListener {
+            controls.dispose()
+            if (fullScreenControls === controls) fullScreenControls = null
+            dialog.findViewById<RadioVisualizerView>(R.id.full_visualizer).motionActive = false
+            setKaraoke(false)
+            if (fullScreen === dialog) fullScreen = null
+            updateBackgroundMotion()
+        }
+        dialog.findViewById<RadioArtworkFrame>(R.id.full_artwork).apply {
+            onBackgroundSwipe = { direction ->
+                changeBackground(direction)
+                controls.show()
+            }
+            setOnClickListener { controls.show() }
+        }
+        dialog.findViewById<Button>(R.id.full_youtube).setOnClickListener { openYoutubeVideo() }
+        dialog.findViewById<ImageButton>(R.id.full_favorite).setOnClickListener { toggleFavorite() }
+        dialog.findViewById<ImageButton>(R.id.full_shuffle).setOnClickListener { shuffleRadio() }
+        dialog.findViewById<ImageButton>(R.id.full_capsules).setOnClickListener { toggleCapsuleFrequency() }
+        dialog.findViewById<ImageButton>(R.id.full_karaoke).setOnClickListener { setKaraoke(!karaokeActive) }
+        dialog.findViewById<ImageButton>(R.id.full_close).setOnClickListener { dialog.dismiss() }
         val fullLyric = dialog.findViewById<TextView>(R.id.full_lyric)
         val dragLyric = floatingLyricDragListener(fullRoot, fullLyric)
         fullLyric.setOnTouchListener(dragLyric)
         dialog.findViewById<Button>(R.id.full_lyric_move).setOnTouchListener(dragLyric)
-        dialog.findViewById<Button>(R.id.full_previous).setOnClickListener { browser?.seekToPreviousMediaItem() }
-        dialog.findViewById<Button>(R.id.full_next).setOnClickListener { browser?.seekToNextMediaItem() }
-        dialog.findViewById<Button>(R.id.full_play).setOnClickListener {
+        dialog.findViewById<ImageButton>(R.id.full_previous).setOnClickListener { browser?.seekToPreviousMediaItem() }
+        dialog.findViewById<ImageButton>(R.id.full_next).setOnClickListener { browser?.seekToNextMediaItem() }
+        dialog.findViewById<ImageButton>(R.id.full_play).setOnClickListener {
             val player = browser
             if (player == null || player.mediaItemCount == 0) startRadio()
             else if (player.isPlaying) player.pause() else resumePlayback(player)
         }
         fullScreen = dialog
+        fullScreenControls = controls
         dialog.show()
+        if (activityVisible) controls.start()
         dialog.window?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
         ViewCompat.requestApplyInsets(fullRoot)
+        applyBackground()
         updateFullScreen()
         updateFavoriteButtons()
+        updateCapsuleButtons()
+    }
+
+    private fun currentYoutubeVideo(): RadioYoutubePilot.Video? = browser?.currentMediaItem?.let(RadioCatalog::youtubeFor)
+
+    private fun changeBackground(direction: Int) {
+        val video = currentYoutubeVideo()
+        val normalCount = RadioVisualStyle.entries.size
+        val current = if (video != null && videoPage == video) normalCount else visualStyle.ordinal
+        val index = RadioYoutubePilot.shiftedVisualIndex(current, direction, normalCount, video != null)
+        if (index == normalCount && video != null) {
+            videoPage = video
+            applyBackground()
+        } else {
+            videoPauseRequest = null // A swipe away cancels any late launch acknowledgement.
+            videoPage = null
+            selectBackground(RadioVisualStyle.entries[index])
+        }
+    }
+
+    private fun openYoutubeVideo() {
+        val video = videoPage ?: return
+        val controller = browser ?: return
+        if (!activityVisible || isFinishing || isDestroyed || video != currentYoutubeVideo() || videoPauseRequest != null) return
+        val args = Bundle().apply {
+            putString(RadioYoutubePilot.SONG_ARG, video.mediaId())
+            putString(RadioYoutubePilot.VIDEO_ARG, video.youtubeId())
+            putString(RadioYoutubePilot.VERSION_ARG, video.version())
+        }
+        val request = controller.sendCustomCommand(SessionCommand(RadioYoutubePilot.PAUSE_COMMAND, Bundle.EMPTY), args)
+        videoPauseRequest = request
+        fun launchWhenPaused(retries: Int, servicePaused: Boolean) {
+            if (videoPauseRequest !== request) return
+            if (!activityVisible || isFinishing || isDestroyed || browser !== controller ||
+                videoPage != video || currentYoutubeVideo() != video) {
+                videoPauseRequest = null
+                return
+            }
+            // Session acknowledgement and the controller's replicated state are separate events.
+            if (servicePaused && controller.playWhenReady && retries > 0) {
+                handler.postDelayed({ launchWhenPaused(retries - 1, true) }, 50)
+                return
+            }
+            videoPauseRequest = null
+            if (servicePaused && !controller.playWhenReady) {
+                videoPage = null
+                applyBackground() // Restores the saved art; radio playhead and lyric data are unchanged.
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(video.watchUrl())).addCategory(Intent.CATEGORY_BROWSABLE))
+                } catch (_: ActivityNotFoundException) {
+                    Toast.makeText(this, R.string.radio_youtube_no_handler, Toast.LENGTH_LONG).show()
+                } catch (_: SecurityException) {
+                    Toast.makeText(this, R.string.radio_youtube_no_handler, Toast.LENGTH_LONG).show()
+                }
+            } else Toast.makeText(this, R.string.radio_youtube_pause_failed, Toast.LENGTH_SHORT).show()
+        }
+        request.addListener({
+            val paused = runCatching { request.get().resultCode == SessionResult.RESULT_SUCCESS }.getOrDefault(false)
+            launchWhenPaused(8, paused)
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun renderYoutubeButton(button: Button, video: RadioYoutubePilot.Video?) {
+        button.visibility = if (video == null) View.GONE else View.VISIBLE
+        button.setText(if (video?.liveVersion() == true) R.string.radio_youtube_open_live else R.string.radio_youtube_open)
+    }
+
+    private fun selectBackground(style: RadioVisualStyle) {
+        visualStyle = style
+        getSharedPreferences("radio_visuals", MODE_PRIVATE).edit().putString("background", style.id).apply()
+        applyBackground()
+    }
+
+    private fun applyBackground() {
+        val video = videoPage?.takeIf { it == currentYoutubeVideo() }
+        renderYoutubeButton(findViewById(R.id.radio_youtube), video)
+        val original = visualStyle == RadioVisualStyle.COVER || video != null
+        cover.visibility = if (original) View.VISIBLE else View.INVISIBLE
+        visualizer.style = visualStyle
+        visualizer.visibility = if (original) View.GONE else View.VISIBLE
+        val label = if (video != null) getString(R.string.radio_youtube_mode)
+            else getString(R.string.radio_visual_label, getString(visualStyle.titleRes), visualStyle.ordinal + 1,
+                RadioVisualStyle.entries.size + if (currentYoutubeVideo() != null) 1 else 0)
+        findViewById<RadioArtworkFrame>(R.id.radio_artwork).contentDescription =
+            getString(R.string.radio_visual_accessibility, label)
+        fullScreen?.let { dialog ->
+            renderYoutubeButton(dialog.findViewById(R.id.full_youtube), video)
+            dialog.findViewById<ImageView>(R.id.full_cover).visibility = if (original) View.VISIBLE else View.INVISIBLE
+            dialog.findViewById<RadioVisualizerView>(R.id.full_visualizer).apply {
+                style = visualStyle
+                visibility = if (original) View.GONE else View.VISIBLE
+            }
+            dialog.findViewById<RadioArtworkFrame>(R.id.full_artwork).contentDescription =
+                getString(R.string.radio_visual_full_accessibility, label)
+        }
+        // Only backgrounds change. Lyric text, position, karaoke and the audio session are untouched.
+        updateBackgroundMotion()
+    }
+
+    private fun updateBackgroundMotion() {
+        if (!::visualizer.isInitialized) return
+        val animate = activityVisible && browser?.isPlaying == true
+        val maximized = fullScreen?.isShowing == true
+        visualizer.motionActive = animate && !maximized
+        fullScreen?.findViewById<RadioVisualizerView>(R.id.full_visualizer)?.motionActive = animate && maximized
+    }
+
+    override fun onStart() {
+        super.onStart()
+        activityVisible = true
+        fullScreenControls?.start()
+        updateBackgroundMotion()
+    }
+
+    override fun onStop() {
+        activityVisible = false
+        videoPauseRequest = null // Never launch a late result after leaving this activity.
+        if (videoPage != null) {
+            videoPage = null
+            applyBackground()
+        }
+        fullScreenControls?.stop()
+        updateBackgroundMotion()
+        super.onStop()
     }
 
     private fun setKaraoke(enabled: Boolean) {
@@ -658,12 +853,21 @@ class MainActivity : ComponentActivity() {
         dialog.findViewById<TextView>(R.id.full_time).text = "${formatTime(position)} / ${if (duration > 0) formatTime(duration) else "—:—"}"
         dialog.findViewById<TextView>(R.id.full_title).text = title.text
         dialog.findViewById<TextView>(R.id.full_artist).text = artist.text
-        dialog.findViewById<Button>(R.id.full_play).text = playButton.text
-        dialog.findViewById<Button>(R.id.full_karaoke).text = if (karaokeActive) "Apagar karaoke" else "Karaoke · reducir voz"
-        dialog.findViewById<Button>(R.id.full_karaoke).isSelected = karaokeActive
+        RadioControlIcons.renderPlayback(dialog.findViewById(R.id.full_play), browser?.isPlaying == true)
+        dialog.findViewById<ImageButton>(R.id.full_play).isEnabled = playButton.isEnabled
+        dialog.findViewById<ImageButton>(R.id.full_previous).isEnabled = previousButton.isEnabled
+        dialog.findViewById<ImageButton>(R.id.full_next).isEnabled = nextButton.isEnabled
+        dialog.findViewById<ImageButton>(R.id.full_karaoke).apply {
+            contentDescription = if (karaokeActive) "Apagar karaoke" else "Activar karaoke"
+            tooltipText = contentDescription
+            isSelected = karaokeActive
+        }
     }
 
     override fun onDestroy() {
+        fullScreenControls?.dispose()
+        fullScreenControls = null
+        audioDialog?.dismiss()
         fullScreen?.dismiss()
         handler.removeCallbacks(tick)
         browser?.removeListener(listener)

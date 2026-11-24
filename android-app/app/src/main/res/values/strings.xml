@@ -25,4 +25,22 @@
     <string name="radio_quality_96">96 kbps</string>
     <string name="radio_quality_192">192 kbps</string>
     <string name="radio_quality_320">320 kbps</string>
+    <string name="radio_visual_cover">Portada original</string>
+    <string name="radio_visual_bars">Barras neón</string>
+    <string name="radio_visual_waves">Ondas</string>
+    <string name="radio_visual_tunnel">Túnel</string>
+    <string name="radio_visual_aurora">Aurora</string>
+    <string name="radio_visual_stars">Estrellas</string>
+    <string name="radio_visual_label">Fondo: %1$s · %2$d/%3$d</string>
+    <string name="radio_visual_accessibility">%1$s. Acciones disponibles: fondo anterior y fondo siguiente.</string>
+    <string name="radio_visual_full_accessibility">%1$s. Toca para mostrar los controles. Acciones disponibles: fondo anterior y fondo siguiente.</string>
+    <string name="radio_visual_previous">Fondo anterior</string>
+    <string name="radio_visual_next">Fondo siguiente</string>
+    <string name="radio_show_controls">Mostrar controles</string>
+    <string name="radio_visual_hint">Desliza la portada a izquierda o derecha para cambiar el fondo. Al maximizar, toca la portada para mostrar los controles. La letra permanece visible.</string>
+    <string name="radio_youtube_mode">Video en YouTube disponible. Activa Abrir en YouTube para verlo en otra app.</string>
+    <string name="radio_youtube_open">Abrir en YouTube</string>
+    <string name="radio_youtube_open_live">Abrir en YouTube · versión en vivo</string>
+    <string name="radio_youtube_no_handler">No se pudo abrir YouTube. Puedes reanudar la radio manualmente.</string>
+    <string name="radio_youtube_pause_failed">La radio no confirmó la pausa. No se abrió YouTube.</string>
 </resources>

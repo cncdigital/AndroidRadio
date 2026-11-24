@@ -1,37 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/radio_screen" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:background="@color/sntss_blue">
+    <LinearLayout android:id="@+id/radio_window_controls" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical|end"
+        android:paddingHorizontal="12dp" android:paddingVertical="8dp">
+        <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:text="SNTSS · SECCIÓN I PUEBLA" android:textColor="@color/sntss_gold"
+            android:textSize="12sp" android:textStyle="bold" android:maxLines="2" android:paddingEnd="8dp" />
+        <ImageButton android:id="@+id/close_radio" style="@style/RadioWindowButton"
+            android:src="@drawable/ic_control_close" android:contentDescription="@string/radio_close_app" android:tooltipText="@string/radio_close_app" />
+        <ImageButton android:id="@+id/minimize_radio" style="@style/RadioWindowButton"
+            android:src="@drawable/ic_control_minimize" android:contentDescription="@string/radio_minimize" android:tooltipText="@string/radio_minimize" />
+        <ImageButton android:id="@+id/maximize_radio" style="@style/RadioWindowButton"
+            android:src="@drawable/ic_control_maximize" android:contentDescription="@string/radio_maximize" android:tooltipText="@string/radio_maximize" />
+    </LinearLayout>
+<ScrollView
+    android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
     android:fillViewport="true" android:background="@color/sntss_blue">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="vertical" android:gravity="center_horizontal"
         android:padding="24dp">
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="SNTSS · SECCIÓN I PUEBLA" android:textColor="@color/sntss_gold"
-            android:textSize="14sp" android:textStyle="bold" android:gravity="center" />
-        <FrameLayout android:layout_width="280dp" android:layout_height="280dp"
-            android:layout_marginTop="18dp">
+        <mx.sntss1puebla.credenciales.RadioArtworkFrame android:id="@+id/radio_artwork" android:layout_width="280dp" android:layout_height="280dp"
+            android:layout_marginTop="18dp" android:accessibilityLiveRegion="polite">
             <ImageView android:id="@+id/song_cover" android:layout_width="match_parent"
                 android:layout_height="match_parent" android:scaleType="centerCrop"
-                android:src="@drawable/ic_radio" android:contentDescription="@string/radio_title" />
+                android:src="@drawable/ic_radio" android:importantForAccessibility="no" />
+            <mx.sntss1puebla.credenciales.RadioVisualizerView android:id="@+id/radio_visualizer"
+                android:layout_width="match_parent" android:layout_height="match_parent"
+                android:importantForAccessibility="no" android:visibility="gone" />
             <TextView android:id="@+id/ghost_lyric" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:layout_gravity="bottom"
                 android:padding="16dp" android:gravity="center" android:maxLines="3"
                 android:background="#B3071D36" android:textColor="#FFDA79"
                 android:shadowColor="#000000" android:shadowRadius="8" android:shadowDx="1" android:shadowDy="2"
                 android:textSize="25sp" android:textStyle="bold" android:visibility="gone" />
-        </FrameLayout>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="10dp" android:gravity="center" android:orientation="horizontal">
-            <Button android:id="@+id/close_radio" android:layout_width="wrap_content"
-                android:layout_height="52dp" android:text="@string/radio_close_app"
-                android:contentDescription="@string/radio_close_app" />
-            <Button android:id="@+id/minimize_radio" android:layout_width="wrap_content"
-                android:layout_height="52dp" android:layout_marginHorizontal="8dp"
-                android:text="@string/radio_minimize"
-                android:contentDescription="@string/radio_minimize" />
-            <Button android:id="@+id/maximize_radio" android:layout_width="wrap_content"
-                android:layout_height="52dp" android:text="@string/radio_maximize" />
-        </LinearLayout>
+        </mx.sntss1puebla.credenciales.RadioArtworkFrame>
+        <Button android:id="@+id/radio_youtube" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:minHeight="48dp" android:layout_marginVertical="4dp" android:textAllCaps="false"
+            android:text="@string/radio_youtube_open" android:visibility="gone" />
         <TextView android:id="@+id/song_title" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="24dp"
             android:gravity="center" android:text="@string/radio_title" android:textColor="@android:color/white"
@@ -59,25 +66,20 @@
             android:contentDescription="@string/radio_quality_label" />
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="18dp" android:orientation="horizontal" android:gravity="center">
-            <Button android:id="@+id/previous_song" android:layout_width="wrap_content"
-                android:layout_height="56dp" android:text="@string/radio_previous"
-                android:contentDescription="@string/radio_previous" />
-            <Button android:id="@+id/play_native_radio" android:layout_width="wrap_content"
-                android:layout_height="56dp" android:layout_marginHorizontal="8dp"
-                android:backgroundTint="@color/sntss_gold" android:text="@string/play_radio_car" />
-            <Button android:id="@+id/next_song" android:layout_width="wrap_content"
-                android:layout_height="56dp" android:text="@string/radio_next"
-                android:contentDescription="@string/radio_next" />
+            <ImageButton android:id="@+id/previous_song" style="@style/RadioTransportButton"
+                android:src="@drawable/ic_control_previous" android:contentDescription="@string/radio_previous" android:tooltipText="@string/radio_previous" />
+            <ImageButton android:id="@+id/play_native_radio" style="@style/RadioPlayButton"
+                android:src="@drawable/ic_control_play" android:contentDescription="@string/play_radio_car" android:tooltipText="@string/play_radio_car" />
+            <ImageButton android:id="@+id/next_song" style="@style/RadioTransportButton"
+                android:src="@drawable/ic_control_next" android:contentDescription="@string/radio_next" android:tooltipText="@string/radio_next" />
         </LinearLayout>
-        <Button android:id="@+id/radio_shuffle" android:layout_width="match_parent"
-            android:layout_height="48dp" android:layout_marginTop="8dp"
-            android:backgroundTint="@color/sntss_gold" android:text="@string/radio_shuffle"
-            android:contentDescription="@string/radio_shuffle_desc" />
-        <Button android:id="@+id/radio_favorite" android:layout_width="match_parent"
-            android:layout_height="48dp" android:text="♡ Favorito" android:contentDescription="Guardar canción favorita" />
-        <Button android:id="@+id/radio_tastes" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:text="Mis gustos musicales"
-            android:layout_marginTop="12dp" />
+        <LinearLayout android:id="@+id/radio_secondary_controls" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal" android:gravity="center">
+            <ImageButton android:id="@+id/radio_shuffle" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_shuffle" android:contentDescription="Otra canción aleatoria" android:tooltipText="Otra canción aleatoria" />
+            <ImageButton android:id="@+id/radio_favorite" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_favorite" android:contentDescription="Guardar canción favorita" android:tooltipText="Guardar canción favorita" />
+            <ImageButton android:id="@+id/radio_audio" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_audio" android:contentDescription="Mejoras de audio" android:tooltipText="Mejoras de audio" />
+            <ImageButton android:id="@+id/radio_tastes" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_tastes" android:contentDescription="Mis gustos musicales" android:tooltipText="Mis gustos musicales" />
+            <ImageButton android:id="@+id/radio_capsules" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_capsules_low" android:contentDescription="Cápsulas frecuentes" android:tooltipText="Cápsulas frecuentes" />
+        </LinearLayout>
         <TextView android:id="@+id/radio_status" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="18dp"
             android:gravity="center" android:text="@string/radio_ready"
@@ -99,3 +101,4 @@
         </ScrollView>
     </LinearLayout>
 </ScrollView>
+</LinearLayout>

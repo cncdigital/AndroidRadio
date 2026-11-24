@@ -35,6 +35,7 @@ internal object RadioCatalog {
             val connectivity = context?.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             val offline = context != null && connectivity?.let { it.getNetworkCapabilities(it.activeNetwork) }
                 ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) != true
+            var freshCatalog = false
             val body = try {
                 if (offline) throw java.io.IOException("Offline catalog")
                 if (connection.responseCode != HttpURLConnection.HTTP_OK) throw java.io.IOException("Radio catalog unavailable")
@@ -46,6 +47,7 @@ internal object RadioCatalog {
                     try { output = atomic.startWrite(); output.write(downloaded.toByteArray(Charsets.UTF_8)); atomic.finishWrite(output) }
                     catch (_: Exception) { atomic.failWrite(output) }
                 } }
+                freshCatalog = true
                 downloaded
             } catch (error: Exception) {
                 synchronized(snapshotLock) {
@@ -69,14 +71,31 @@ internal object RadioCatalog {
                         ?: available.sorted().lastOrNull { it <= 192 } ?: 320
                     val preferred = if (selected == 320) "" else "?quality=$selected"
                     val cover = if (commercial) null else track.optString("coverUrl").takeIf { it.startsWith("/api/radio/cover/") }
+                    val mediaId = "${if (commercial) "commercial" else "song"}:$id"
+                    val reportedArtist = track.optString("artist")
+                    val artist = reportedArtist.ifBlank { "Radio Sindical" }
+                    val youtubeDisabled = !commercial && track.opt(RadioYoutubePilot.CATALOG_DISABLED) == true
+                    // Remote associations come only from this fresh, canonical HTTPS catalog, not its offline snapshot.
+                    val verifiedVideo = if (!commercial && freshCatalog) RadioYoutubePilot.verified(
+                        mediaId, title, reportedArtist,
+                        track.opt(RadioYoutubePilot.CATALOG_VIDEO_ID) as? String,
+                        track.opt(RadioYoutubePilot.CATALOG_VIDEO_VERSION) as? String, youtubeDisabled)
+                        else null
                     val item = MediaItem.Builder()
-                        .setMediaId("${if (commercial) "commercial" else "song"}:$id")
+                        .setMediaId(mediaId)
                         .setUri("$ORIGIN/api/radio/${if (commercial) "commercial" else "audio"}/$id${if (commercial) "" else preferred}")
                         .setMimeType(MimeTypes.AUDIO_MPEG)
                         .setMediaMetadata(MediaMetadata.Builder()
-                            .setExtras(android.os.Bundle().apply { putLong("uploadedAtEpoch", track.optLong("uploadedAtEpoch", 0L).coerceAtLeast(0L)) })
+                            .setExtras(android.os.Bundle().apply {
+                                putLong("uploadedAtEpoch", track.optLong("uploadedAtEpoch", 0L).coerceAtLeast(0L))
+                                if (youtubeDisabled) putBoolean(RadioYoutubePilot.CATALOG_DISABLED, true)
+                                if (verifiedVideo != null) {
+                                    putString(RadioYoutubePilot.CATALOG_VIDEO_ID, verifiedVideo.youtubeId())
+                                    putString(RadioYoutubePilot.CATALOG_VIDEO_VERSION, verifiedVideo.version())
+                                }
+                            })
                             .setTitle(if (commercial) "Comercial · $title" else title)
-                            .setArtist(track.optString("artist").ifBlank { "Radio Sindical" })
+                            .setArtist(artist)
                             .setGenre(track.optString("genre"))
                             .setAlbumTitle(track.optString("album").ifBlank { "Radio Sindical · SNTSS Sección I Puebla" })
                             .setAlbumArtist("Radio Sindical · SNTSS Sección I Puebla")
@@ -102,6 +121,15 @@ internal object RadioCatalog {
         } finally {
             connection.disconnect()
         }
+    }
+
+    fun youtubeFor(item: MediaItem): RadioYoutubePilot.Video? {
+        val metadata = item.mediaMetadata
+        val extras = metadata.extras
+        return RadioYoutubePilot.verified(item.mediaId, metadata.title?.toString(), metadata.artist?.toString(),
+            extras?.getString(RadioYoutubePilot.CATALOG_VIDEO_ID),
+            extras?.getString(RadioYoutubePilot.CATALOG_VIDEO_VERSION),
+            extras?.getBoolean(RadioYoutubePilot.CATALOG_DISABLED) == true)
     }
 
     fun qualityFor(context: Context): Int {
