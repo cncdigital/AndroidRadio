@@ -29,7 +29,12 @@ internal object RadioAudioDialog {
         content.addView(TextView(context).apply {
             text = "Perfiles suaves y opcionales. Se reduce el nivel para dejar margen a los efectos; no garantiza evitar distorsión. No crea un subwoofer físico ni sonido 5D. La calidad depende de la grabación, la salida y el dispositivo."
         })
-        val labels = mapOf(RadioAudioEffectKind.EQUALIZER to "Ecualización suave", RadioAudioEffectKind.BASS to "Refuerzo moderado de graves", RadioAudioEffectKind.SPATIAL to "Amplitud estéreo · auriculares")
+        val intelligent = CheckBox(context).apply {
+            text = "Ecualizador inteligente"
+            isChecked = settings.intelligentEq
+        }
+        val intelligentStatus = TextView(context)
+        val labels = mapOf(RadioAudioEffectKind.EQUALIZER to "Ecualización", RadioAudioEffectKind.BASS to "Refuerzo moderado de graves", RadioAudioEffectKind.SPATIAL to "Amplitud estéreo · auriculares")
         val controls = RadioAudioEffectKind.entries.associateWith { kind ->
             val check = CheckBox(context).apply {
                 text = labels.getValue(kind)
@@ -42,6 +47,10 @@ internal object RadioAudioDialog {
             val status = TextView(context)
             content.addView(check)
             content.addView(status)
+            if (kind == RadioAudioEffectKind.EQUALIZER) {
+                content.addView(intelligent)
+                content.addView(intelligentStatus)
+            }
             check to status
         }
         content.addView(TextView(context).apply {
@@ -61,10 +70,12 @@ internal object RadioAudioDialog {
             settings = RadioAudioSettings(master.isChecked,
                 controls.getValue(RadioAudioEffectKind.EQUALIZER).first.isChecked,
                 controls.getValue(RadioAudioEffectKind.BASS).first.isChecked,
-                controls.getValue(RadioAudioEffectKind.SPATIAL).first.isChecked)
+                controls.getValue(RadioAudioEffectKind.SPATIAL).first.isChecked,
+                intelligent.isChecked)
             settings.save(context)
             context.startService(Intent(context, RadioPlaybackService::class.java).setAction(RadioPlaybackService.ACTION_UPDATE_AUDIO))
         }
+        intelligent.setOnCheckedChangeListener { _, _ -> save() }
         master.setOnCheckedChangeListener { _, _ -> save() }
         controls.values.forEach { (check, _) -> check.setOnCheckedChangeListener { _, _ -> save() } }
         val dialog = AlertDialog.Builder(context).setTitle("Mejoras de audio")
@@ -79,6 +90,19 @@ internal object RadioAudioDialog {
             override fun run() {
                 val extras = sessionExtras()
                 val karaoke = extras?.getBoolean("radio.karaoke.active", false) == true
+                intelligent.isEnabled = master.isChecked && controls.getValue(RadioAudioEffectKind.EQUALIZER).first.isChecked
+                val eqState = extras?.getString("radio.audio.EQUALIZER")
+                val profile = extras?.getString("radio.audio.eq.profile")
+                val rules = "Ajuste local según el género del catálogo, sin usar IA en línea."
+                intelligentStatus.text = when {
+                    !intelligent.isChecked -> "Desactivado · se conserva la ecualización suave."
+                    !intelligent.isEnabled -> "Activa Mejoras de audio y Ecualización para usarlo."
+                    karaoke -> "Suspendido durante karaoke. $rules"
+                    eqState == "UNAVAILABLE" || eqState == "FAILED" -> "No disponible en la salida actual. $rules"
+                    eqState == "ACTIVE" && profile == "Ecualización suave" -> "Sin perfil para este género; se usa la ecualización suave. $rules"
+                    eqState == "ACTIVE" && !profile.isNullOrEmpty() -> "Perfil activo: $profile. $rules"
+                    else -> rules
+                }
                 controls.forEach { (kind, pair) ->
                     val state = runCatching { RadioAudioEffectState.valueOf(extras?.getString("radio.audio.${kind.name}") ?: "WAITING") }
                         .getOrDefault(RadioAudioEffectState.WAITING)

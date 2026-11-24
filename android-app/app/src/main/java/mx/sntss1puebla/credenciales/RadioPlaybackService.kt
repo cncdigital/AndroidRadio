@@ -87,9 +87,11 @@ class RadioPlaybackService : MediaLibraryService() {
     private fun applyAudioEffects() {
         if (!::player.isInitialized) return
         // Lower level before enabling boosts, then restore unity if nothing is supported.
-        val requested = isMusicSong() && RadioAudioEffectKind.entries.any { audioSettings.requested(it) }
+        val song = isMusicSong()
+        val genre = player.currentMediaItem?.mediaMetadata?.genre?.toString()
+        val requested = song && RadioAudioEffectKind.entries.any { audioSettings.requested(it) }
         applyMusicVolume(radioAudioNeedsMarginBeforeChange(requested, audioEffects.hasActiveEffect()))
-        audioEffects.apply(audioSettings, isMusicSong(), karaokeActive)
+        audioEffects.apply(audioSettings, song, karaokeActive, genre)
         applyMusicVolume()
         publishAudioState()
     }
@@ -98,6 +100,10 @@ class RadioPlaybackService : MediaLibraryService() {
         val extras = Bundle(librarySession.sessionExtras)
         extras.putBoolean("radio.karaoke.active", karaokeActive)
         extras.putBoolean("radio.audio.enabled", audioSettings.enabled)
+        if (audioSettings.intelligentEq && isMusicSong()) {
+            val eq = audioSettings.equalizerProfile(player.currentMediaItem?.mediaMetadata?.genre?.toString(), karaokeActive)
+            extras.putString("radio.audio.eq.profile", eq.label)
+        } else extras.remove("radio.audio.eq.profile")
         RadioAudioEffectKind.entries.forEach { extras.putString("radio.audio.${it.name}", audioEffects.state(it).name) }
         librarySession.setSessionExtras(extras)
     }

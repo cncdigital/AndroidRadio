@@ -13,8 +13,8 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 44
-        versionName = "0.10.34"
+        versionCode = 45
+        versionName = "0.10.35"
     }
 
     // Keep this block in every packaged version: an update must use the installed APK's signing key.

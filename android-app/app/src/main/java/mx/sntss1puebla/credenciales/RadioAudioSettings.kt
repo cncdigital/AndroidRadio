@@ -8,6 +8,7 @@ internal data class RadioAudioSettings(
     val equalizer: Boolean = true,
     val bass: Boolean = false,
     val spatial: Boolean = false,
+    val intelligentEq: Boolean = false,
 ) {
     fun requested(kind: RadioAudioEffectKind): Boolean = enabled && when (kind) {
         RadioAudioEffectKind.EQUALIZER -> equalizer
@@ -15,18 +16,25 @@ internal data class RadioAudioSettings(
         RadioAudioEffectKind.SPATIAL -> spatial
     }
 
+    fun equalizerProfile(genre: String?, karaoke: Boolean): RadioIntelligentEq.Profile =
+        if (!intelligentEq || karaoke) RadioIntelligentEq.Profile.MANUAL
+        else RadioIntelligentEq.forGenre(genre).let {
+            if (it == RadioIntelligentEq.Profile.FLAT) RadioIntelligentEq.Profile.MANUAL else it
+        }
+
     companion object {
         fun read(context: Context): RadioAudioSettings {
             val prefs = context.getSharedPreferences("radio_audio", Context.MODE_PRIVATE)
             fun flag(key: String, fallback: Boolean) = runCatching { prefs.getBoolean(key, fallback) }.getOrDefault(fallback)
-            return RadioAudioSettings(flag("enabled", false), flag("eq", true), flag("bass", false), flag("spatial", false))
+            return RadioAudioSettings(flag("enabled", false), flag("eq", true), flag("bass", false), flag("spatial", false), flag("intelligent_eq", false))
         }
     }
 
     fun save(context: Context) {
         context.getSharedPreferences("radio_audio", Context.MODE_PRIVATE).edit()
             .putBoolean("enabled", enabled).putBoolean("eq", equalizer)
-            .putBoolean("bass", bass).putBoolean("spatial", spatial).apply()
+            .putBoolean("bass", bass).putBoolean("spatial", spatial)
+            .putBoolean("intelligent_eq", intelligentEq).apply()
     }
 }
 

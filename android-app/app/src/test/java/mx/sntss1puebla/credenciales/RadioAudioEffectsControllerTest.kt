@@ -6,6 +6,8 @@ import org.junit.Test
 class RadioAudioEffectsControllerTest {
     private class Engine : RadioAudioEffectEngine {
         var active = false
+        var lastProfile: RadioIntelligentEq.Profile? = null
+        override fun setEqualizerProfile(profile: RadioIntelligentEq.Profile) { lastProfile = profile }
         var releases = 0
         var failEnable = false
         var effective = true
@@ -149,4 +151,25 @@ class RadioAudioEffectsControllerTest {
         assertNotSame(old, factory.engines.getValue(RadioAudioEffectKind.SPATIAL))
     }
 
+    @Test fun intelligentModeSharesOneEngineAndRetainsManualFallback() {
+        val factory = Factory()
+        val effects = RadioAudioEffectsController(factory)
+        effects.bind(12)
+        val equalizer = factory.engines.getValue(RadioAudioEffectKind.EQUALIZER)
+        val bass = factory.engines.getValue(RadioAudioEffectKind.BASS)
+        val settings = RadioAudioSettings(enabled = true, bass = true, intelligentEq = true)
+        effects.apply(settings, isSong = true, karaoke = false, genre = "Clásica")
+        assertEquals(RadioIntelligentEq.Profile.CLASSICAL, equalizer.lastProfile)
+        assertTrue(equalizer.active && bass.active)
+        effects.apply(settings, isSong = true, karaoke = false, genre = "archivo sin género")
+        assertEquals(RadioIntelligentEq.Profile.MANUAL, equalizer.lastProfile)
+        effects.apply(settings, isSong = true, karaoke = true, genre = "Rock")
+        assertEquals(RadioIntelligentEq.Profile.MANUAL, equalizer.lastProfile)
+        effects.apply(settings.copy(intelligentEq = false), isSong = true, karaoke = false, genre = "Rock")
+        assertEquals(RadioIntelligentEq.Profile.MANUAL, equalizer.lastProfile)
+        effects.apply(settings, isSong = false, karaoke = false, genre = "Clásica")
+        assertFalse(equalizer.active)
+        assertFalse(bass.active)
+        assertEquals(3, factory.sessions.size)
+    }
 }

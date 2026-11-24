@@ -16,10 +16,12 @@ class RadioAudioSettingsTest {
         try {
             prefs.edit().clear().commit()
             assertFalse(RadioAudioSettings.read(context).enabled)
-            val enabled = RadioAudioSettings(enabled = true, equalizer = false, bass = true, spatial = true)
+            val enabled = RadioAudioSettings(enabled = true, equalizer = false, bass = true, spatial = true, intelligentEq = true)
             enabled.save(context)
             assertEquals(enabled, RadioAudioSettings.read(context))
             prefs.edit().putString("enabled", "invalid").commit()
+            prefs.edit().putString("intelligent_eq", "invalid").commit()
+            assertFalse(RadioAudioSettings.read(context).intelligentEq)
             assertFalse(RadioAudioSettings.read(context).enabled)
             RadioAudioSettings().save(context)
             assertEquals(RadioAudioSettings(), RadioAudioSettings.read(context))

@@ -1,0 +1,7 @@
+# Radio Sindical Android: Ecualizador inteligente
+
+Open the middle sliders icon in the five-action row; the new optional checkbox is under Ecualización. It uses only recognized genre metadata already attached to the selected song. No internet inference, cloud call, acoustic identification or equalization of capsule voice is added. With no matching catalog genre, or with karaoke active, use the pre-existing manual/soft curve. Turning this checkbox off restores that curve; Audio original bypasses all enhancements and resets the preference.
+
+One native Equalizer per valid music session still owns all band changes. Intelligent profiles cut at most 1.4 dB in five fixed center frequency ranges without adding boost; device-reported bounds are honored. The existing music-only 0.5 headroom factor and independent voice ducking are unchanged. Active curve changes step by 0.4 dB every 35 ms (including while changing genres mid-ramp); disabling and session/route release cancel queued changes. Bass and stereo width remain independent options. The voice/capsule player and system volume are untouched; no Auto UI control is added.
+
+Physical validation: compare known and unrecognized genres while parked on phone speaker and Bluetooth, then switch among EQ/manual/Audio original and enable karaoke. Check that unavailable routes leave music available, song transitions do not click, independent effects do not change the spoken clip level, and there is no long pause between songs. Local JVM tests do not validate a hardware Equalizer.
