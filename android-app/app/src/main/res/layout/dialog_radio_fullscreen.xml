@@ -22,9 +22,12 @@
         <TextView android:id="@+id/full_time" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:gravity="center" android:paddingVertical="4dp"
             android:textColor="#FFFFFF" android:textSize="14sp" />
-        <Button android:id="@+id/full_favorite" style="@style/RadioActionButton" android:text="Favorito" android:drawableStart="@drawable/ic_action_favorite" android:contentDescription="Guardar canción favorita" />
-        <Button android:id="@+id/full_shuffle" style="@style/RadioActionButton" android:text="Aleatorio" android:drawableStart="@drawable/ic_action_shuffle" android:contentDescription="Reproducir otra canción aleatoria" />
-        <Button android:id="@+id/full_karaoke" style="@style/RadioActionButton" android:text="Karaoke · reducir voz" android:drawableStart="@drawable/ic_action_karaoke" android:contentDescription="Karaoke · reducir voz" />
+        <LinearLayout android:id="@+id/full_secondary_controls" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal" android:gravity="center">
+            <ImageButton android:id="@+id/full_favorite" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_favorite" android:contentDescription="Guardar canción favorita" android:tooltipText="Guardar canción favorita" />
+            <ImageButton android:id="@+id/full_shuffle" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_shuffle" android:contentDescription="Otra canción aleatoria" android:tooltipText="Otra canción aleatoria" />
+            <ImageButton android:id="@+id/full_karaoke" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_karaoke" android:contentDescription="Activar karaoke" android:tooltipText="Activar karaoke" />
+            <ImageButton android:id="@+id/full_capsules" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_capsules_low" android:contentDescription="Cápsulas frecuentes" android:tooltipText="Cápsulas frecuentes" />
+        </LinearLayout>
         <TextView android:id="@+id/full_title" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:gravity="center"
             android:textColor="@android:color/white" android:textSize="20sp"

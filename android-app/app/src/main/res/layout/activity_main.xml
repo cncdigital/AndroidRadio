@@ -70,10 +70,13 @@
             <ImageButton android:id="@+id/next_song" style="@style/RadioTransportButton"
                 android:src="@drawable/ic_control_next" android:contentDescription="@string/radio_next" android:tooltipText="@string/radio_next" />
         </LinearLayout>
-        <Button android:id="@+id/radio_shuffle" style="@style/RadioActionButton" android:text="Aleatorio" android:drawableStart="@drawable/ic_action_shuffle" android:contentDescription="Reproducir otra canción aleatoria" />
-        <Button android:id="@+id/radio_favorite" style="@style/RadioActionButton" android:text="Favorito" android:drawableStart="@drawable/ic_action_favorite" android:contentDescription="Guardar canción favorita" />
-        <Button android:id="@+id/radio_audio" style="@style/RadioActionButton" android:text="Mejoras de audio" android:drawableStart="@drawable/ic_action_audio" android:contentDescription="Mejoras de audio" />
-        <Button android:id="@+id/radio_tastes" style="@style/RadioActionButton" android:text="Mis gustos musicales" android:drawableStart="@drawable/ic_action_tastes" android:contentDescription="Mis gustos musicales" />
+        <LinearLayout android:id="@+id/radio_secondary_controls" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:orientation="horizontal" android:gravity="center">
+            <ImageButton android:id="@+id/radio_shuffle" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_shuffle" android:contentDescription="Otra canción aleatoria" android:tooltipText="Otra canción aleatoria" />
+            <ImageButton android:id="@+id/radio_favorite" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_favorite" android:contentDescription="Guardar canción favorita" android:tooltipText="Guardar canción favorita" />
+            <ImageButton android:id="@+id/radio_audio" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_audio" android:contentDescription="Mejoras de audio" android:tooltipText="Mejoras de audio" />
+            <ImageButton android:id="@+id/radio_tastes" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_tastes" android:contentDescription="Mis gustos musicales" android:tooltipText="Mis gustos musicales" />
+            <ImageButton android:id="@+id/radio_capsules" style="@style/RadioActionIconButton" android:src="@drawable/ic_action_capsules_low" android:contentDescription="Cápsulas frecuentes" android:tooltipText="Cápsulas frecuentes" />
+        </LinearLayout>
         <TextView android:id="@+id/radio_status" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="18dp"
             android:gravity="center" android:text="@string/radio_ready"

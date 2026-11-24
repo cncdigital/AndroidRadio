@@ -22,8 +22,15 @@ final class RadioCapsuleDownload {
 
     private RadioCapsuleDownload() {}
 
+    record Clip(File file, RadioCapsuleHistory.Entry metadata) {}
+
     /** The caller owns the returned file; null never leaves behind a partial file. */
     static File fetch(URL url, File directory, long deadlineNanos) {
+        Clip clip = fetchClip(url, directory, deadlineNanos, null);
+        return clip == null ? null : clip.file();
+    }
+
+    static Clip fetchClip(URL url, File directory, long deadlineNanos, RadioCapsuleCadence.Slot slot) {
         HttpURLConnection connection = null;
         File temporary = null;
         boolean keep = false;
@@ -43,6 +50,12 @@ final class RadioCapsuleDownload {
             connection.setRequestProperty("Accept", "audio/wav, audio/mpeg");
             connection.setRequestProperty("Accept-Encoding", "identity");
             if (connection.getResponseCode() != HttpURLConnection.HTTP_OK || expired(deadlineNanos)) return null;
+            // Require the opt-in backend contract, not a heuristic legacy recording.
+            if (slot != null && (!slot.query.equals(connection.getHeaderField("x-radio-capsule-slot")) ||
+                    !slot.accepts(connection.getHeaderField("x-radio-kind")))) return null;
+            RadioCapsuleHistory.Entry metadata = RadioCapsuleHistory.Entry.fromHeaders(
+                connection.getHeaderField("x-radio-capsule-id"), connection.getHeaderField("x-radio-template"));
+            if (slot != null && metadata == null) return null;
             String type = connection.getContentType();
             if (type == null) return null;
             String contentType = type.split(";", 2)[0].trim();
@@ -67,7 +80,7 @@ final class RadioCapsuleDownload {
                 if (!(wav ? completeWav(file, count, deadlineNanos) : completeMp3(file, count, deadlineNanos))) return null;
             }
             keep = !expired(deadlineNanos);
-            return keep ? temporary : null;
+            return keep ? new Clip(temporary, metadata) : null;
         } catch (IOException | RuntimeException skipped) {
             return null;
         } finally {

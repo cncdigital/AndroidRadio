@@ -29,11 +29,24 @@ public class RadioCapsuleDownloadTest {
     }
 
     private static URL fixture(int status, String type, long length, InputStream stream) throws IOException {
+        return fixture(status, type, length, stream, null, null);
+    }
+    private static URL fixture(int status, String type, long length, InputStream stream, String slot, String kind) throws IOException {
+        return fixture(status, type, length, stream, slot, kind, "42", "deadbeef");
+    }
+    private static URL fixture(int status, String type, long length, InputStream stream, String slot, String kind, String id, String template) throws IOException {
         return new URL(null, "https://fixture.invalid/api/radio/voice", new URLStreamHandler() {
             @Override protected URLConnection openConnection(URL url) {
                 return new HttpURLConnection(url) {
                     @Override public int getResponseCode() { return status; }
                     @Override public String getContentType() { return type; }
+                    @Override public String getHeaderField(String header) {
+                        if ("x-radio-capsule-slot".equals(header)) return slot;
+                        if ("x-radio-kind".equals(header)) return kind;
+                        if ("x-radio-capsule-id".equals(header)) return id;
+                        if ("x-radio-template".equals(header)) return template;
+                        return null;
+                    }
                     @Override public long getContentLengthLong() { return length; }
                     @Override public InputStream getInputStream() {
                         assertFalse(getInstanceFollowRedirects());
@@ -125,5 +138,28 @@ public class RadioCapsuleDownloadTest {
             assertTrue(Thread.interrupted());
             assertEquals(0, dir.list().length);
         } finally { Thread.interrupted(); dir.delete(); }
+    }
+
+    @Test public void plannedSlotsRequireNewServerEchoAndRejectWrongKindEvenWithValidAudio() throws Exception {
+        File dir = Files.createTempDirectory("capsule-test").toFile();
+        byte[] bytes = wav(2);
+        try {
+            assertNull(RadioCapsuleDownload.fetchClip(response("audio/wav", bytes.length, bytes), dir, deadline(), RadioCapsuleCadence.Slot.FACT));
+            for (String kind : new String[] {null, "fact", "unrecognized"}) {
+                URL wrong = fixture(200, "audio/wav", bytes.length, new ByteArrayInputStream(bytes), "regular", kind);
+                assertNull(RadioCapsuleDownload.fetchClip(wrong, dir, deadline(), RadioCapsuleCadence.Slot.REGULAR));
+            }
+            URL valid = fixture(200, "audio/wav", bytes.length, new ByteArrayInputStream(bytes), "fact-or-regular", "story");
+            URL invalid = fixture(200, "audio/wav", bytes.length, new ByteArrayInputStream(bytes), "fact-or-regular", "story", "42", null);
+            assertNull(RadioCapsuleDownload.fetchClip(invalid, dir, deadline(), RadioCapsuleCadence.Slot.FACT_OR_REGULAR));
+            var result = RadioCapsuleDownload.fetchClip(valid, dir, deadline(), RadioCapsuleCadence.Slot.FACT_OR_REGULAR);
+            assertNotNull(result);
+            assertEquals(new RadioCapsuleHistory.Entry("42", "deadbeef"), result.metadata());
+            File clip = result.file();
+            assertNotNull(clip);
+            assertArrayEquals(bytes, Files.readAllBytes(clip.toPath()));
+            assertTrue(clip.delete());
+            assertEquals(0, dir.list().length);
+        } finally { dir.delete(); }
     }
 }

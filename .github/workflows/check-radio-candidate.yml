@@ -71,10 +71,10 @@ jobs:
           OUT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK")
           printf '%s\n' "$OUT" | grep -qi 'SHA-256 digest: 89c6a0e71776d62240dd55bdceed9edbe46fe02b7102ae02d6fafae8d0bf642e'
           BADGING=$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK")
-          grep -q "versionCode='43' versionName='0.10.33'" <<< "$BADGING"
-          cp "$APK" "$RUNNER_TEMP/RadioSindical-0.10.33-candidate.apk"
-          sha256sum "$RUNNER_TEMP/RadioSindical-0.10.33-candidate.apk"
-          echo 'Certificado permanente y versión 0.10.33/43 verificados. No se publica la actualización.'
+          grep -q "versionCode='44' versionName='0.10.34'" <<< "$BADGING"
+          cp "$APK" "$RUNNER_TEMP/RadioSindical-0.10.34-candidate.apk"
+          sha256sum "$RUNNER_TEMP/RadioSindical-0.10.34-candidate.apk"
+          echo 'Certificado permanente y versión 0.10.34/44 verificados. No se publica la actualización.'
 
       - name: Comprobar aceleración disponible sin cambiar permisos
         id: kvm
@@ -99,8 +99,8 @@ jobs:
       - name: Conservar candidata para revisión
         uses: actions/upload-artifact@v4
         with:
-          name: RadioSindical-0.10.33-signed-candidate
-          path: ${{ runner.temp }}/RadioSindical-0.10.33-candidate.apk
+          name: RadioSindical-0.10.34-signed-candidate
+          path: ${{ runner.temp }}/RadioSindical-0.10.34-candidate.apk
           if-no-files-found: error
           retention-days: 7
 
@@ -108,7 +108,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: RadioSindical-0.10.33-test-results
+          name: RadioSindical-0.10.34-test-results
           path: |
             android-app/app/build/test-results/
             android-app/app/build/outputs/androidTest-results/

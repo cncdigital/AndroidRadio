@@ -64,8 +64,8 @@ class RadioPlaybackTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val phoneLayout = LayoutInflater.from(context).inflate(R.layout.activity_main, null, false)
         val fullscreenLayout = LayoutInflater.from(context).inflate(R.layout.dialog_radio_fullscreen, null, false)
-        assertNotNull(phoneLayout.findViewById<Button>(R.id.radio_shuffle))
-        assertNotNull(fullscreenLayout.findViewById<Button>(R.id.full_shuffle))
+        assertNotNull(phoneLayout.findViewById<android.widget.ImageButton>(R.id.radio_shuffle))
+        assertNotNull(fullscreenLayout.findViewById<android.widget.ImageButton>(R.id.full_shuffle))
     }
 
     @Test fun queueAdvancesAndWrapsWithoutEndingPlayback() {

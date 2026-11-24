@@ -178,10 +178,12 @@ class MainActivity : ComponentActivity() {
         applyBackground()
         findViewById<ImageButton>(R.id.close_radio).setOnClickListener { closeRadioApp() }
         findViewById<ImageButton>(R.id.minimize_radio).setOnClickListener { moveTaskToBack(true) }
-        findViewById<Button>(R.id.radio_favorite).setOnClickListener { toggleFavorite() }
-        findViewById<Button>(R.id.radio_shuffle).setOnClickListener { shuffleRadio() }
-        findViewById<Button>(R.id.radio_tastes).setOnClickListener { showTastes() }
-        findViewById<Button>(R.id.radio_audio).setOnClickListener { audioDialog = RadioAudioDialog.show(this) { browser?.sessionExtras } }
+        findViewById<ImageButton>(R.id.radio_favorite).setOnClickListener { toggleFavorite() }
+        findViewById<ImageButton>(R.id.radio_shuffle).setOnClickListener { shuffleRadio() }
+        findViewById<ImageButton>(R.id.radio_capsules).setOnClickListener { toggleCapsuleFrequency() }
+        updateCapsuleButtons()
+        findViewById<ImageButton>(R.id.radio_tastes).setOnClickListener { showTastes() }
+        findViewById<ImageButton>(R.id.radio_audio).setOnClickListener { audioDialog = RadioAudioDialog.show(this) { browser?.sessionExtras } }
         findViewById<ImageButton>(R.id.maximize_radio).setOnClickListener { showFullScreen() }
         val qualityLabels = listOf(
             getString(R.string.radio_quality_auto), getString(R.string.radio_quality_96),
@@ -283,11 +285,11 @@ class MainActivity : ComponentActivity() {
         }
         status.setText(R.string.radio_connecting)
         playButton.isEnabled = false
-        findViewById<Button>(R.id.radio_shuffle).isEnabled = false
+        findViewById<ImageButton>(R.id.radio_shuffle).isEnabled = false
         val songsFuture = controller.getChildren(RadioCatalog.SONGS_ID, 0, 500, null)
         songsFuture.addListener({
             playButton.isEnabled = true
-            findViewById<Button>(R.id.radio_shuffle).isEnabled = true
+            findViewById<ImageButton>(R.id.radio_shuffle).isEnabled = true
             val songs = runCatching { songsFuture.get().value }.getOrNull()
             if (songs.isNullOrEmpty()) {
                 status.setText(R.string.radio_sign_in)
@@ -453,13 +455,29 @@ class MainActivity : ComponentActivity() {
     private fun updateFavoriteButtons() {
         val id = browser?.currentMediaItem?.mediaId.orEmpty()
         val selected = RadioPreferences.isFavorite(this,id)
-        listOfNotNull(findViewById<Button>(R.id.radio_favorite),fullScreen?.findViewById<Button>(R.id.full_favorite)).forEach {
-            it.text = if (selected) "Favorita guardada" else "Favorito"
+        listOfNotNull(findViewById<ImageButton>(R.id.radio_favorite),fullScreen?.findViewById<ImageButton>(R.id.full_favorite)).forEach {
+            it.setImageResource(if (selected) R.drawable.ic_action_favorite_filled else R.drawable.ic_action_favorite)
             it.contentDescription = if (selected) "Quitar canción de favoritos" else "Guardar canción favorita"
+            it.tooltipText = it.contentDescription
             it.isEnabled = id.startsWith("song:")
             it.isSelected = selected
         }
     }
+    private fun toggleCapsuleFrequency() {
+        val enabled = !RadioPreferences.frequentCapsules(this)
+        RadioPreferences.saveFrequentCapsules(this, enabled)
+        updateCapsuleButtons()
+        Toast.makeText(this, if (enabled) "Cápsulas cada canción" else "Cápsulas cada 5 canciones", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateCapsuleButtons() {
+        val enabled = RadioPreferences.frequentCapsules(this)
+        listOfNotNull(
+            findViewById<ImageButton>(R.id.radio_capsules),
+            fullScreen?.findViewById<ImageButton>(R.id.full_capsules)
+        ).forEach { RadioControlIcons.renderCapsules(it, enabled) }
+    }
+
     private fun applyTastes() {
         startService(Intent(this, RadioPlaybackService::class.java).setAction(RadioPlaybackService.ACTION_UPDATE_TASTES))
         Toast.makeText(this, "Gustos guardados. Se aplican a las próximas canciones.", Toast.LENGTH_SHORT).show()
@@ -652,9 +670,10 @@ class MainActivity : ComponentActivity() {
             }
             setOnClickListener { controls.show() }
         }
-        dialog.findViewById<Button>(R.id.full_favorite).setOnClickListener { toggleFavorite() }
-        dialog.findViewById<Button>(R.id.full_shuffle).setOnClickListener { shuffleRadio() }
-        dialog.findViewById<Button>(R.id.full_karaoke).setOnClickListener { setKaraoke(!karaokeActive) }
+        dialog.findViewById<ImageButton>(R.id.full_favorite).setOnClickListener { toggleFavorite() }
+        dialog.findViewById<ImageButton>(R.id.full_shuffle).setOnClickListener { shuffleRadio() }
+        dialog.findViewById<ImageButton>(R.id.full_capsules).setOnClickListener { toggleCapsuleFrequency() }
+        dialog.findViewById<ImageButton>(R.id.full_karaoke).setOnClickListener { setKaraoke(!karaokeActive) }
         dialog.findViewById<ImageButton>(R.id.full_close).setOnClickListener { dialog.dismiss() }
         val fullLyric = dialog.findViewById<TextView>(R.id.full_lyric)
         val dragLyric = floatingLyricDragListener(fullRoot, fullLyric)
@@ -676,6 +695,7 @@ class MainActivity : ComponentActivity() {
         applyBackground()
         updateFullScreen()
         updateFavoriteButtons()
+        updateCapsuleButtons()
     }
 
     private fun changeBackground(direction: Int) {
@@ -755,8 +775,11 @@ class MainActivity : ComponentActivity() {
         dialog.findViewById<ImageButton>(R.id.full_play).isEnabled = playButton.isEnabled
         dialog.findViewById<ImageButton>(R.id.full_previous).isEnabled = previousButton.isEnabled
         dialog.findViewById<ImageButton>(R.id.full_next).isEnabled = nextButton.isEnabled
-        dialog.findViewById<Button>(R.id.full_karaoke).text = if (karaokeActive) "Apagar karaoke" else "Karaoke · reducir voz"
-        dialog.findViewById<Button>(R.id.full_karaoke).isSelected = karaokeActive
+        dialog.findViewById<ImageButton>(R.id.full_karaoke).apply {
+            contentDescription = if (karaokeActive) "Apagar karaoke" else "Activar karaoke"
+            tooltipText = contentDescription
+            isSelected = karaokeActive
+        }
     }
 
     override fun onDestroy() {

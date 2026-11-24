@@ -72,24 +72,40 @@ class RadioIconControlsTest {
             assertNotNull(play.drawable)
         }
     }
-    @Test fun secondaryActionsKeepLabelsIconsAndTouchTargets() = instrumentation.runOnMainSync {
+    @Test fun secondaryActionsAreIconOnlyWithAccessibleLabelsAndTouchTargets() = instrumentation.runOnMainSync {
         for (width in listOf(320, 420, 600)) {
             val root = normal(width)
             val density = root.resources.displayMetrics.density
-            val ids = listOf(R.id.radio_shuffle, R.id.radio_favorite, R.id.radio_audio, R.id.radio_tastes)
+            val ids = listOf(R.id.radio_shuffle, R.id.radio_favorite, R.id.radio_audio, R.id.radio_tastes, R.id.radio_capsules)
             ids.forEach { id ->
-                val button = root.findViewById<android.widget.Button>(id)
-                assertNotNull(button.compoundDrawablesRelative[0])
-                assertFalse(button.text.isNullOrBlank())
+                val button = root.findViewById<ImageButton>(id)
+                assertNotNull(button.drawable)
+                assertFalse(button.tooltipText.isNullOrBlank())
                 assertFalse(button.contentDescription.isNullOrBlank())
-                assertTrue(button.height >= 48 * density)
+                assertTrue(button.width >= 48 * density); assertTrue(button.height >= 48 * density)
                 assertTrue(bounds(root, button).right <= root.width)
+                assertTrue(bounds(root, button).left >= 0)
                 var clicked = false
                 button.setOnClickListener { clicked = true }; button.performClick()
                 assertTrue(clicked)
             }
         }
     }
+    @Test fun capsuleFrequencyAnnouncesActualStateInBothModes() = instrumentation.runOnMainSync {
+        val root = normal(320)
+        val button = root.findViewById<ImageButton>(R.id.radio_capsules)
+        for (enabled in listOf(false, true, false)) {
+            RadioControlIcons.renderCapsules(button, enabled)
+            assertEquals(enabled, button.isSelected)
+            val state = if (enabled) "Cada canción" else "Cada 5 canciones"
+            assertEquals("Cápsulas: $state", button.tooltipText)
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                assertEquals("Cápsulas frecuentes", button.contentDescription)
+                assertEquals(state, button.stateDescription)
+            } else assertEquals("Cápsulas frecuentes. $state", button.contentDescription)
+        }
+    }
+
     @Test fun renderNormalControlsForReview() = instrumentation.runOnMainSync {
         val root = normal(420)
         root.findViewById<TextView>(R.id.song_title).text = "Radio Sindical"

@@ -13,7 +13,6 @@ import androidx.media3.session.SessionResult
 import android.os.Handler
 import android.os.Looper
 import android.net.Uri
-import java.net.HttpURLConnection
 import java.net.URL
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -106,17 +105,15 @@ class RadioPlaybackService : MediaLibraryService() {
     private val capsuleExecutor = Executors.newSingleThreadExecutor()
     private var capsuleDownload: Future<*>? = null
     private var localCapsuleFile: File? = null
-    private var completedSongs = 0
+    private var localCapsuleMetadata: RadioCapsuleHistory.Entry? = null
+    private val capsuleHistory = RadioCapsuleHistory()
+    private val capsuleCadence = RadioCapsuleCadence()
     private var elapsedMusicMs = 0L
     private var lastSongPositionMs = 0L
     private var commercials: List<MediaItem> = emptyList()
     private var intervalMinutes = 0
     private var commercialIndex = 0
-    private var facts: List<RadioCatalog.Fact> = emptyList()
-    private var lastFactId: String? = null
     private var tastesPending = false
-    private var pendingFact = false
-    private var pendingIntroduction = false
     private var lastMediaId: String? = null
     private val catalogRefresh = object : Runnable {
         override fun run() {
@@ -435,7 +432,10 @@ class RadioPlaybackService : MediaLibraryService() {
                         finishAnnouncement()
                         return
                     }
-                    if (capsulePlayback.markAudible(id)) applyMusicVolume()
+                    if (capsulePlayback.markAudible(id)) {
+                        localCapsuleMetadata?.let { capsuleHistory.recordAudible(it) }
+                        applyMusicVolume()
+                    }
                 } else if (capsulePlayback.isAudible) {
                     // Once the voice has begun, an interruption is terminal; never resume fragments.
                     finishAnnouncement()
@@ -474,14 +474,19 @@ class RadioPlaybackService : MediaLibraryService() {
                 if (tastesPending && item?.mediaId?.startsWith("song:") == true) mainHandler.post { applyTastes() }
                 val previous = lastMediaId
                 lastMediaId = item?.mediaId
-                if (previous?.startsWith("song:") == true &&
-                    (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)) {
-                    RadioPreferences.recordCompleted(this@RadioPlaybackService, previous)
+                val natural = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+                val endedSong = natural && previous?.startsWith("song:") == true
+                if (endedSong && previous != null) RadioPreferences.recordCompleted(this@RadioPlaybackService, previous)
+                if (item?.mediaId?.startsWith("song:") == true &&
+                    (natural || previous != item.mediaId)) {
+                    capsuleCadence.enterSong(item.mediaId, endedSong, previous?.startsWith("commercial:") == true)
                 }
-                if (item?.mediaId?.startsWith("song:") == true && reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && previous != item.mediaId) {
-                    mainHandler.post { if (player.currentMediaItem?.mediaId == item.mediaId) announceIfDue(item) }
+                if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || item == null) {
+                    if (item?.mediaId?.startsWith("song:") == true)
+                        mainHandler.post { if (player.currentMediaItem?.mediaId == item.mediaId) announceIfDue(item) }
+                    return
                 }
-                if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || item == null) return
                 if (previous?.startsWith("commercial:") == true) {
                     // The inserted commercial has finished; remove it from the music queue.
                     val priorIndex = player.currentMediaItemIndex - 1
@@ -498,13 +503,6 @@ class RadioPlaybackService : MediaLibraryService() {
                 }
                 elapsedMusicMs += lastSongPositionMs.coerceAtLeast(0)
                 lastSongPositionMs = 0
-                completedSongs += 1
-                pendingIntroduction = completedSongs % 3 == 0
-                pendingFact = completedSongs % 3 == 0
-                if (!pendingIntroduction && !pendingFact) {
-                    val capsuleTrackId = item.mediaId.removePrefix("song:").toIntOrNull()
-                    if (capsuleTrackId != null) catalogExecutor.execute { prewarmCapsule(capsuleTrackId, completedSongs % 16) }
-                }
                 if (intervalMinutes >= 5 && commercials.isNotEmpty() && elapsedMusicMs >= intervalMinutes * 60_000L) {
                     val commercial = commercials[commercialIndex % commercials.size]
                     commercialIndex += 1
@@ -618,20 +616,19 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private fun announceIfDue(item: MediaItem) {
-        if (karaokeActive) { pendingIntroduction = false; pendingFact = false; return }
-        if (!player.playWhenReady || (!pendingIntroduction && !pendingFact)) return
+        if (!player.playWhenReady) return
         val trackId = item.mediaId.removePrefix("song:").toIntOrNull() ?: return
-        pendingIntroduction = false
-        val factDue = pendingFact
-        pendingFact = false
-        val fact = if (factDue) facts.filter { it.id != lastFactId }.randomOrNull() ?: facts.randomOrNull() else null
-        lastFactId = fact?.id ?: lastFactId
-        val style = completedSongs % 16
+        val slot = capsuleCadence.take(item.mediaId, RadioPreferences.frequentCapsules(this)) ?: return
+        if (karaokeActive) return
         val url = Uri.parse("https://sntss1puebla.com/api/radio/voice").buildUpon()
             .appendQueryParameter("trackId", trackId.toString())
-            .appendQueryParameter("style", style.toString())
+            .appendQueryParameter("style", capsuleCadence.style().toString())
             .appendQueryParameter("client", "android-auto")
-            .apply { if (fact != null) appendQueryParameter("factId", fact.id) }
+            .appendQueryParameter("capsuleSlot", slot.query)
+            .apply {
+                capsuleHistory.recentIds().takeIf { it.isNotEmpty() }?.let { appendQueryParameter("recent", it) }
+                capsuleHistory.recentTemplates().takeIf { it.isNotEmpty() }?.let { appendQueryParameter("templates", it) }
+            }
             .build()
         finishAnnouncement()
         val id = capsulePlayback.start()
@@ -639,18 +636,21 @@ class RadioPlaybackService : MediaLibraryService() {
         val deadline = startedAt + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(CAPSULE_START_LIMIT_MS)
         val clipDir = File(cacheDir, "radio-capsule-playback")
         capsuleDownload = capsuleExecutor.submit {
-            val file = RadioCapsuleDownload.fetch(URL(url.toString()), clipDir, deadline)
+            val clip = RadioCapsuleDownload.fetchClip(URL(url.toString()), clipDir, deadline, slot)
+            val file = clip?.file()
+            val metadata = clip?.metadata()
             if (Thread.currentThread().isInterrupted) {
                 file?.delete()
             } else if (!mainHandler.post {
                     if (!capsulePlayback.waitingToStart(id) || player.currentMediaItem?.mediaId != item.mediaId) {
                         file?.delete()
-                    } else if (file == null || System.nanoTime() >= deadline || !player.isPlaying) {
+                    } else if (file == null || metadata == null || capsuleHistory.repeatsImmediate(metadata) || System.nanoTime() >= deadline || !player.isPlaying) {
                         file?.delete()
                         finishAnnouncement()
                     } else {
                         capsuleDownload = null
                         localCapsuleFile = file
+                        localCapsuleMetadata = metadata
                         voicePlayer.volume = RADIO_VOICE_NORMALIZED_VOLUME
                         voicePlayer.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
                         voicePlayer.prepare()
@@ -662,29 +662,6 @@ class RadioPlaybackService : MediaLibraryService() {
         }
         // Keep the song at its normal level until a complete local clip starts.
         mainHandler.postDelayed({ if (capsulePlayback.waitingToStart(id)) finishAnnouncement() }, CAPSULE_START_LIMIT_MS)
-    }
-
-    /** Generate and persist the next song capsule without interrupting playback. */
-    private fun prewarmCapsule(trackId: Int, style: Int) {
-        runCatching {
-            val url = Uri.parse("https://sntss1puebla.com/api/radio/voice").buildUpon()
-                .appendQueryParameter("trackId", trackId.toString())
-                .appendQueryParameter("style", style.toString())
-                .appendQueryParameter("client", "android-auto")
-                .appendQueryParameter("prepare", "1")
-                .build()
-            val connection = (URL(url.toString()).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 5_000
-                readTimeout = 15_000
-                setRequestProperty("Accept", "audio/mpeg")
-            }
-            connection.inputStream.use { stream ->
-                val buffer = ByteArray(8_192)
-                while (stream.read(buffer) >= 0) { /* Persisted by the server; discard locally. */ }
-            }
-            connection.disconnect()
-        }
     }
 
     private fun refreshCatalog() {
@@ -702,7 +679,6 @@ class RadioPlaybackService : MediaLibraryService() {
         mainHandler.post {
             commercials = program.commercials
             intervalMinutes = program.intervalMinutes
-            facts = program.facts
             if (player.mediaItemCount > 0 && player.currentMediaItem?.mediaId?.startsWith("song:") == true) {
                 val current = player.currentMediaItem ?: return@post
                 val currentIndex = player.currentMediaItemIndex
@@ -735,6 +711,7 @@ class RadioPlaybackService : MediaLibraryService() {
         voicePlayer.clearMediaItems()
         localCapsuleFile?.delete()
         localCapsuleFile = null
+        localCapsuleMetadata = null
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = librarySession
