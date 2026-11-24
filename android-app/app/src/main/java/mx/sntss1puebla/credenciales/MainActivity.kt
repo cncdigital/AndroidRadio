@@ -710,9 +710,7 @@ class MainActivity : ComponentActivity() {
         updateCapsuleButtons()
     }
 
-    private fun currentYoutubeVideo(): RadioYoutubePilot.Video? = browser?.currentMediaItem?.let { item ->
-        RadioYoutubePilot.verified(item.mediaId, item.mediaMetadata.title?.toString(), item.mediaMetadata.artist?.toString())
-    }
+    private fun currentYoutubeVideo(): RadioYoutubePilot.Video? = browser?.currentMediaItem?.let(RadioCatalog::youtubeFor)
 
     private fun changeBackground(direction: Int) {
         val video = currentYoutubeVideo()
@@ -733,7 +731,11 @@ class MainActivity : ComponentActivity() {
         val video = videoPage ?: return
         val controller = browser ?: return
         if (!activityVisible || isFinishing || isDestroyed || video != currentYoutubeVideo() || videoPauseRequest != null) return
-        val args = Bundle().apply { putString(RadioYoutubePilot.SONG_ARG, video.mediaId()) }
+        val args = Bundle().apply {
+            putString(RadioYoutubePilot.SONG_ARG, video.mediaId())
+            putString(RadioYoutubePilot.VIDEO_ARG, video.youtubeId())
+            putString(RadioYoutubePilot.VERSION_ARG, video.version())
+        }
         val request = controller.sendCustomCommand(SessionCommand(RadioYoutubePilot.PAUSE_COMMAND, Bundle.EMPTY), args)
         videoPauseRequest = request
         fun launchWhenPaused(retries: Int, servicePaused: Boolean) {

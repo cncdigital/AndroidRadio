@@ -147,6 +147,8 @@ class RadioPlaybackService : MediaLibraryService() {
         }
     }
     @Volatile private var songs: List<MediaItem> = emptyList()
+    // Independent of playback order/current item; catalog refresh can revoke a previously queued video.
+    @Volatile private var reviewedYoutubeVideos: Map<String, RadioYoutubePilot.Video> = emptyMap()
     private lateinit var httpFactory: DefaultHttpDataSource.Factory
     private lateinit var audioCache: SimpleCache
     private lateinit var cacheFactory: CacheDataSource.Factory
@@ -284,12 +286,13 @@ class RadioPlaybackService : MediaLibraryService() {
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
             if (command.customAction == youtubePauseCommand.customAction) {
                 val current = player.currentMediaItem
+                val currentVideo = current?.let(RadioCatalog::youtubeFor)
                 val valid = isOwnPhoneController(controller) &&
                     !session.isAutoCompanionController(controller) && !session.isAutomotiveController(controller) &&
-                    !session.isMediaNotificationController(controller) && current != null &&
-                    current.mediaId == args.getString(RadioYoutubePilot.SONG_ARG) &&
-                    RadioYoutubePilot.verified(current.mediaId, current.mediaMetadata.title?.toString(),
-                        current.mediaMetadata.artist?.toString()) != null
+                    !session.isMediaNotificationController(controller) && currentVideo != null &&
+                    RadioYoutubePilot.allowsLaunch(currentVideo, reviewedYoutubeVideos[currentVideo.mediaId()],
+                        args.getString(RadioYoutubePilot.SONG_ARG), args.getString(RadioYoutubePilot.VIDEO_ARG),
+                        args.getString(RadioYoutubePilot.VERSION_ARG))
                 if (!valid) return Futures.immediateFuture(SessionResult(androidx.media3.session.SessionError.ERROR_PERMISSION_DENIED))
                 player.pause()
                 finishAnnouncement() // Music position is unchanged; cancel pending/active speech before opening YouTube.
@@ -690,7 +693,15 @@ class RadioPlaybackService : MediaLibraryService() {
     }
 
     private fun refreshCatalog() {
-        val program = RadioCatalog.loadProgram(RadioCatalog.qualityFor(this), this)
+        val program = try {
+            RadioCatalog.loadProgram(RadioCatalog.qualityFor(this), this)
+        } catch (error: Exception) {
+            reviewedYoutubeVideos = emptyMap()
+            throw error
+        }
+        reviewedYoutubeVideos = program.songs.mapNotNull { item ->
+            RadioCatalog.youtubeFor(item)?.let { item.mediaId to it }
+        }.toMap()
         if (program.songs.isEmpty() && songs.isNotEmpty()) return
         val previousFirst = getSharedPreferences("radio", MODE_PRIVATE).getString("first", null)
         val existing = songs.map { it.mediaId }.toSet()
