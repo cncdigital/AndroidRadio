@@ -12,7 +12,7 @@ import android.os.Looper
 internal interface RadioAudioEffectEngine {
     fun setEnabled(enabled: Boolean)
     fun release()
-    fun setEqualizerProfile(profile: RadioIntelligentEq.Profile) = Unit
+    fun setEqualizerTuning(tuning: RadioManualEq.Tuning) = Unit
     fun isEffective(): Boolean = true
     fun onControlLost(listener: () -> Unit) = Unit
 }
@@ -55,12 +55,12 @@ internal class RadioAudioEffectsController(
     }
 
     fun apply(settings: RadioAudioSettings, isSong: Boolean, karaoke: Boolean, genre: String? = null) {
-        val profile = settings.equalizerProfile(genre, karaoke)
+        val tuning = settings.equalizerTuning(genre, karaoke)
         RadioAudioEffectKind.entries.forEach { kind ->
             val engine = engines[kind] ?: return@forEach
             val enabled = settings.requested(kind) && isSong && !(karaoke && kind == RadioAudioEffectKind.SPATIAL)
             try {
-                if (kind == RadioAudioEffectKind.EQUALIZER && enabled) engine.setEqualizerProfile(profile)
+                if (kind == RadioAudioEffectKind.EQUALIZER && enabled) engine.setEqualizerTuning(tuning)
                 engine.setEnabled(enabled)
                 states[kind] = if (enabled) RadioAudioEffectState.ACTIVE else RadioAudioEffectState.READY
             } catch (_: RuntimeException) { fail(kind) }
@@ -129,7 +129,7 @@ private object AndroidRadioAudioEffectFactory : RadioAudioEffectFactory {
                 private val levels = IntArray(eq?.numberOfBands?.toInt() ?: 0)
                 private val centers = IntArray(levels.size) { eq!!.getCenterFreq(it.toShort()) / 1000 }
                 private val limits = eq?.bandLevelRange
-                private var goal = RadioIntelligentEq.Profile.FLAT
+                private var goal = RadioManualEq.Tuning(RadioIntelligentEq.Profile.FLAT, null)
                 private var active = false
                 private var fault: (() -> Unit)? = null
                 private val ramp = object : Runnable {
@@ -141,7 +141,7 @@ private object AndroidRadioAudioEffectFactory : RadioAudioEffectFactory {
                             check(equalizer.hasControl())
                             var unfinished = false
                             for (band in levels.indices) {
-                                val target = RadioIntelligentEq.gain(goal, centers[band], range[0].toInt(), range[1].toInt())
+                                val target = goal.gain(centers[band], range[0].toInt(), range[1].toInt())
                                 val next = RadioIntelligentEq.nextGain(levels[band], target)
                                 if (next != levels[band]) equalizer.setBandLevel(band.toShort(), next.toShort())
                                 levels[band] = next
@@ -151,9 +151,9 @@ private object AndroidRadioAudioEffectFactory : RadioAudioEffectFactory {
                         } catch (_: RuntimeException) { fault?.invoke() }
                     }
                 }
-                override fun setEqualizerProfile(profile: RadioIntelligentEq.Profile) {
-                    if (eq == null || profile == goal) return
-                    goal = profile
+                override fun setEqualizerTuning(tuning: RadioManualEq.Tuning) {
+                    if (eq == null || tuning == goal) return
+                    goal = tuning
                     if (active) { handler?.removeCallbacks(ramp); handler?.post(ramp) }
                 }
                 override fun setEnabled(enabled: Boolean) {

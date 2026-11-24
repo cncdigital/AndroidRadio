@@ -8,7 +8,8 @@ internal data class RadioAudioSettings(
     val equalizer: Boolean = true,
     val bass: Boolean = false,
     val spatial: Boolean = false,
-    val intelligentEq: Boolean = false,
+    val eqMode: RadioManualEq.Mode = RadioManualEq.Mode.SOFT,
+    val manualCurve: RadioManualEq.Curve = RadioManualEq.FLAT,
 ) {
     fun requested(kind: RadioAudioEffectKind): Boolean = enabled && when (kind) {
         RadioAudioEffectKind.EQUALIZER -> equalizer
@@ -16,17 +17,17 @@ internal data class RadioAudioSettings(
         RadioAudioEffectKind.SPATIAL -> spatial
     }
 
-    fun equalizerProfile(genre: String?, karaoke: Boolean): RadioIntelligentEq.Profile =
-        if (!intelligentEq || karaoke) RadioIntelligentEq.Profile.MANUAL
-        else RadioIntelligentEq.forGenre(genre).let {
-            if (it == RadioIntelligentEq.Profile.FLAT) RadioIntelligentEq.Profile.MANUAL else it
-        }
+    fun equalizerTuning(genre: String?, karaoke: Boolean): RadioManualEq.Tuning =
+        RadioManualEq.tuning(eqMode, manualCurve, genre, karaoke)
 
     companion object {
         fun read(context: Context): RadioAudioSettings {
             val prefs = context.getSharedPreferences("radio_audio", Context.MODE_PRIVATE)
             fun flag(key: String, fallback: Boolean) = runCatching { prefs.getBoolean(key, fallback) }.getOrDefault(fallback)
-            return RadioAudioSettings(flag("enabled", false), flag("eq", true), flag("bass", false), flag("spatial", false), flag("intelligent_eq", false))
+            fun band(index: Int) = runCatching { prefs.getInt("eq_band_$index", 0) }.getOrDefault(0)
+            val mode = RadioManualEq.readMode(runCatching { prefs.getString("eq_mode", null) }.getOrNull(), flag("intelligent_eq", false))
+            return RadioAudioSettings(flag("enabled", false), flag("eq", true), flag("bass", false), flag("spatial", false),
+                mode, RadioManualEq.Curve(band(0), band(1), band(2), band(3), band(4)))
         }
     }
 
@@ -34,7 +35,9 @@ internal data class RadioAudioSettings(
         context.getSharedPreferences("radio_audio", Context.MODE_PRIVATE).edit()
             .putBoolean("enabled", enabled).putBoolean("eq", equalizer)
             .putBoolean("bass", bass).putBoolean("spatial", spatial)
-            .putBoolean("intelligent_eq", intelligentEq).apply()
+            .putString("eq_mode", eqMode.key)
+            .putBoolean("intelligent_eq", eqMode == RadioManualEq.Mode.INTELLIGENT)
+            .also { edit -> repeat(RadioManualEq.BANDS) { edit.putInt("eq_band_$it", manualCurve.db(it)) } }.apply()
     }
 }
 

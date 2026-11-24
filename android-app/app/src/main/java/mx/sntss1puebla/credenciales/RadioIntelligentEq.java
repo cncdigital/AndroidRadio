@@ -56,9 +56,12 @@ final class RadioIntelligentEq {
     /** Five fixed frequency ranges; use a native session band's own center and clamp to hardware bounds. */
     static int gain(Profile profile, int centerHz, int hardwareMin, int hardwareMax) {
         if (hardwareMin > 0 || hardwareMax < 0 || centerHz <= 0) return 0;
-        int band = centerHz < 180 ? 0 : centerHz < 500 ? 1 : centerHz <= 2500 ? 2 : centerHz <= 5000 ? 3 : 4;
-        int gain = profile.gains[band];
+        int gain = profile.gains[bandIndex(centerHz)];
         return Math.max(hardwareMin, Math.min(hardwareMax, gain));
+    }
+
+    static int bandIndex(int centerHz) {
+        return centerHz < 180 ? 0 : centerHz < 500 ? 1 : centerHz <= 2500 ? 2 : centerHz <= 5000 ? 3 : 4;
     }
 
     /** 40 mB / 35 ms: ramps through intermediate levels, including when a setting changes mid-ramp. */

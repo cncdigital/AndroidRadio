@@ -6,8 +6,9 @@ import org.junit.Test
 class RadioAudioEffectsControllerTest {
     private class Engine : RadioAudioEffectEngine {
         var active = false
-        var lastProfile: RadioIntelligentEq.Profile? = null
-        override fun setEqualizerProfile(profile: RadioIntelligentEq.Profile) { lastProfile = profile }
+        var lastTuning: RadioManualEq.Tuning? = null
+        val lastProfile get() = lastTuning?.profile()
+        override fun setEqualizerTuning(tuning: RadioManualEq.Tuning) { lastTuning = tuning }
         var releases = 0
         var failEnable = false
         var effective = true
@@ -157,7 +158,7 @@ class RadioAudioEffectsControllerTest {
         effects.bind(12)
         val equalizer = factory.engines.getValue(RadioAudioEffectKind.EQUALIZER)
         val bass = factory.engines.getValue(RadioAudioEffectKind.BASS)
-        val settings = RadioAudioSettings(enabled = true, bass = true, intelligentEq = true)
+        val settings = RadioAudioSettings(enabled = true, bass = true, eqMode = RadioManualEq.Mode.INTELLIGENT)
         effects.apply(settings, isSong = true, karaoke = false, genre = "Clásica")
         assertEquals(RadioIntelligentEq.Profile.CLASSICAL, equalizer.lastProfile)
         assertTrue(equalizer.active && bass.active)
@@ -165,11 +166,48 @@ class RadioAudioEffectsControllerTest {
         assertEquals(RadioIntelligentEq.Profile.MANUAL, equalizer.lastProfile)
         effects.apply(settings, isSong = true, karaoke = true, genre = "Rock")
         assertEquals(RadioIntelligentEq.Profile.MANUAL, equalizer.lastProfile)
-        effects.apply(settings.copy(intelligentEq = false), isSong = true, karaoke = false, genre = "Rock")
+        effects.apply(settings.copy(eqMode = RadioManualEq.Mode.SOFT), isSong = true, karaoke = false, genre = "Rock")
         assertEquals(RadioIntelligentEq.Profile.MANUAL, equalizer.lastProfile)
         effects.apply(settings, isSong = false, karaoke = false, genre = "Clásica")
         assertFalse(equalizer.active)
         assertFalse(bass.active)
         assertEquals(3, factory.sessions.size)
+    }
+
+    @Test fun manualAndIntelligentSwitchOneEngineAndPreserveMusicOnlyHeadroom() {
+        val factory = Factory()
+        val effects = RadioAudioEffectsController(factory)
+        effects.bind(22)
+        val engine = factory.engines.getValue(RadioAudioEffectKind.EQUALIZER)
+        val settings = RadioAudioSettings(enabled = true, bass = true, spatial = true,
+            eqMode = RadioManualEq.Mode.MANUAL, manualCurve = RadioManualEq.Curve(3, -3, 0, 1, 0))
+
+        effects.apply(settings, isSong = true, karaoke = false, genre = "Rock")
+        assertEquals(300, engine.lastTuning!!.gain(120, -1500, 1500))
+        val intelligent = settings.copy(eqMode = RadioManualEq.Mode.INTELLIGENT)
+        effects.apply(intelligent, isSong = true, karaoke = false, genre = "Rock")
+        assertEquals(-40, engine.lastTuning!!.gain(120, -1500, 1500)) // Not +300 -40.
+        assertNull(engine.lastTuning!!.custom())
+        assertEquals(settings.manualCurve, intelligent.manualCurve)
+        effects.apply(intelligent.copy(eqMode = RadioManualEq.Mode.MANUAL), isSong = true, karaoke = true, genre = "Rock")
+        assertEquals(300, engine.lastTuning!!.gain(120, -1500, 1500))
+        assertTrue(factory.engines.getValue(RadioAudioEffectKind.BASS).active)
+        assertFalse(factory.engines.getValue(RadioAudioEffectKind.SPATIAL).active)
+        assertEquals(0.125f, radioMusicVolume(effects.hasActiveEffect(), true), 0f)
+        effects.apply(settings, isSong = false, karaoke = false, genre = "Rock")
+        assertFalse(engine.active)
+        assertEquals(1f, radioMusicVolume(effects.hasActiveEffect(), false), 0f)
+        assertEquals(3, factory.sessions.size) // Only one EQ instance ever.
+    }
+
+    @Test fun missingEqualizerNeverAppliesOrRequiresPermanentHeadroom() {
+        val factory = Factory().apply { unsupported = RadioAudioEffectKind.EQUALIZER }
+        val effects = RadioAudioEffectsController(factory)
+        effects.bind(12)
+        effects.apply(RadioAudioSettings(enabled = true, eqMode = RadioManualEq.Mode.MANUAL,
+            manualCurve = RadioManualEq.Curve(3, 3, 3, 3, 3)), isSong = true, karaoke = false)
+        assertEquals(RadioAudioEffectState.UNAVAILABLE, effects.state(RadioAudioEffectKind.EQUALIZER))
+        assertFalse(effects.hasActiveEffect())
+        assertEquals(1f, radioMusicVolume(effects.hasActiveEffect(), false), 0f)
     }
 }

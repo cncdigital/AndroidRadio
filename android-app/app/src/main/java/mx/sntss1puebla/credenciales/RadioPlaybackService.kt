@@ -100,8 +100,8 @@ class RadioPlaybackService : MediaLibraryService() {
         val extras = Bundle(librarySession.sessionExtras)
         extras.putBoolean("radio.karaoke.active", karaokeActive)
         extras.putBoolean("radio.audio.enabled", audioSettings.enabled)
-        if (audioSettings.intelligentEq && isMusicSong()) {
-            val eq = audioSettings.equalizerProfile(player.currentMediaItem?.mediaMetadata?.genre?.toString(), karaokeActive)
+        if (audioSettings.eqMode == RadioManualEq.Mode.INTELLIGENT && isMusicSong()) {
+            val eq = audioSettings.equalizerTuning(player.currentMediaItem?.mediaMetadata?.genre?.toString(), karaokeActive).profile()
             extras.putString("radio.audio.eq.profile", eq.label)
         } else extras.remove("radio.audio.eq.profile")
         RadioAudioEffectKind.entries.forEach { extras.putString("radio.audio.${it.name}", audioEffects.state(it).name) }
