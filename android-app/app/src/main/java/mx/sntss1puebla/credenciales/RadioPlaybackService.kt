@@ -154,6 +154,7 @@ class RadioPlaybackService : MediaLibraryService() {
     private lateinit var librarySession: MediaLibrarySession
     private lateinit var musicListener: Player.Listener
 
+    private val youtubePauseCommand = SessionCommand(RadioYoutubePilot.PAUSE_COMMAND, Bundle.EMPTY)
     private val karaokeCommand = SessionCommand("radio.karaoke.toggle", Bundle.EMPTY)
     private val favoriteCommand = SessionCommand("radio.favorite.toggle", Bundle.EMPTY)
     private val shuffleCommand = SessionCommand("radio.queue.shuffle", Bundle.EMPTY)
@@ -247,6 +248,9 @@ class RadioPlaybackService : MediaLibraryService() {
         karaokeButton(),
     )
 
+    private fun isOwnPhoneController(controller: MediaSession.ControllerInfo): Boolean =
+        controller.packageName == packageName && controller.uid == applicationInfo.uid
+
     internal val callback = object : MediaLibrarySession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
             if (!controller.isTrusted) return super.onConnect(session, controller)
@@ -257,7 +261,9 @@ class RadioPlaybackService : MediaLibraryService() {
             if (!automotive && !notification) {
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                     .setAvailablePlayerCommands(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS)
-                    .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(shuffleCommand).add(favoriteCommand).build())
+                    .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                        .buildUpon().add(shuffleCommand).add(favoriteCommand)
+                        .apply { if (isOwnPhoneController(controller)) add(youtubePauseCommand) }.build())
                     .build()
             }
             val result = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
@@ -276,6 +282,19 @@ class RadioPlaybackService : MediaLibraryService() {
             }
         }
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+            if (command.customAction == youtubePauseCommand.customAction) {
+                val current = player.currentMediaItem
+                val valid = isOwnPhoneController(controller) &&
+                    !session.isAutoCompanionController(controller) && !session.isAutomotiveController(controller) &&
+                    !session.isMediaNotificationController(controller) && current != null &&
+                    current.mediaId == args.getString(RadioYoutubePilot.SONG_ARG) &&
+                    RadioYoutubePilot.verified(current.mediaId, current.mediaMetadata.title?.toString(),
+                        current.mediaMetadata.artist?.toString()) != null
+                if (!valid) return Futures.immediateFuture(SessionResult(androidx.media3.session.SessionError.ERROR_PERMISSION_DENIED))
+                player.pause()
+                finishAnnouncement() // Music position is unchanged; cancel pending/active speech before opening YouTube.
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
             if (command.customAction == favoriteCommand.customAction) {
                 player.currentMediaItem?.takeIf { it.mediaId.startsWith("song:") }?.let {
                     RadioPreferences.toggleSong(this@RadioPlaybackService, it.mediaId)

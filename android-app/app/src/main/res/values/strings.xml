@@ -38,4 +38,9 @@
     <string name="radio_visual_next">Fondo siguiente</string>
     <string name="radio_show_controls">Mostrar controles</string>
     <string name="radio_visual_hint">Desliza la portada a izquierda o derecha para cambiar el fondo. Al maximizar, toca la portada para mostrar los controles. La letra permanece visible.</string>
+    <string name="radio_youtube_mode">Video en YouTube disponible. Activa Abrir en YouTube para verlo en otra app.</string>
+    <string name="radio_youtube_open">Abrir en YouTube</string>
+    <string name="radio_youtube_open_live">Abrir en YouTube · versión en vivo</string>
+    <string name="radio_youtube_no_handler">No se pudo abrir YouTube. Puedes reanudar la radio manualmente.</string>
+    <string name="radio_youtube_pause_failed">La radio no confirmó la pausa. No se abrió YouTube.</string>
 </resources>

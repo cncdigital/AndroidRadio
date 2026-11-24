@@ -68,6 +68,16 @@ class RadioPlaybackTest {
         assertNotNull(fullscreenLayout.findViewById<android.widget.ImageButton>(R.id.full_shuffle))
     }
 
+    @Test fun youtubePilotIsHiddenByDefaultAndLyricsRemainUnchangedInBothLayouts() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val phone = LayoutInflater.from(context).inflate(R.layout.activity_main, null, false)
+        val full = LayoutInflater.from(context).inflate(R.layout.dialog_radio_fullscreen, null, false)
+        assertEquals(android.view.View.GONE, phone.findViewById<Button>(R.id.radio_youtube).visibility)
+        assertEquals(android.view.View.GONE, full.findViewById<Button>(R.id.full_youtube).visibility)
+        assertNotNull(phone.findViewById<android.widget.TextView>(R.id.song_lyrics))
+        assertNotNull(full.findViewById<android.widget.TextView>(R.id.full_lyric))
+    }
+
     @Test fun queueAdvancesAndWrapsWithoutEndingPlayback() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val wav = tone()
